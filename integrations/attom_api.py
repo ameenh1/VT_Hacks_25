@@ -359,8 +359,9 @@ class ATTOMDataBridge:
             params["postalcode"] = criteria.zip_code
         if criteria.min_price:
             params["minSalePrice"] = criteria.min_price
-        if criteria.max_price:
-            params["maxSalePrice"] = criteria.max_price
+        # Note: maxSalePrice not supported by ATTOM API - will filter client-side
+        # if criteria.max_price:
+        #     params["maxSalePrice"] = criteria.max_price
         if criteria.min_bedrooms:
             params["minBeds"] = criteria.min_bedrooms
         if criteria.max_bedrooms:
@@ -378,19 +379,47 @@ class ATTOMDataBridge:
             properties = []
             for prop_data in response['property']:
                 try:
+                    # Extract key sections
+                    address_info = prop_data.get('address', {})
+                    building_info = prop_data.get('building', {})
+                    summary_info = prop_data.get('summary', {})
+                    assessment_info = prop_data.get('assessment', {})
+                    sale_info = prop_data.get('sale', {})
+                    location_info = prop_data.get('location', {})
+                    
+                    # Extract address - use oneLine which is available
+                    full_address = address_info.get('oneLine', '')
+                    
+                    # Extract building size information
+                    size_info = building_info.get('size', {})
+                    rooms_info = building_info.get('rooms', {})
+                    
+                    # Extract assessment values (this is where the valuation data is)
+                    assessed_info = assessment_info.get('assessed', {})
+                    market_info = assessment_info.get('market', {})
+                    
                     property_obj = ATTOMPropertyData(
-                        property_id=prop_data.get('identifier', {}).get('fips', ''),
-                        address=prop_data.get('address', {}).get('oneline', ''),
-                        city=prop_data.get('address', {}).get('locality', ''),
-                        state=prop_data.get('address', {}).get('countrySubd', ''),
-                        zip_code=prop_data.get('address', {}).get('postal1', ''),
-                        county=prop_data.get('address', {}).get('county', ''),
-                        property_type=prop_data.get('summary', {}).get('propType', ''),
-                        bedrooms=prop_data.get('building', {}).get('rooms', {}).get('beds'),
-                        bathrooms=prop_data.get('building', {}).get('rooms', {}).get('bathstotal'),
-                        square_feet=prop_data.get('building', {}).get('size', {}).get('livingsize'),
-                        year_built=prop_data.get('summary', {}).get('yearbuilt'),
-                        estimated_value=prop_data.get('assessment', {}).get('market', {}).get('mktttlvalue')
+                        property_id=str(prop_data.get('identifier', {}).get('attomId', '')),
+                        address=full_address,
+                        city=address_info.get('locality', ''),
+                        state=address_info.get('countrySubd', ''),
+                        zip_code=address_info.get('postal1', ''),
+                        latitude=float(location_info.get('latitude', 0)) if location_info.get('latitude') else None,
+                        longitude=float(location_info.get('longitude', 0)) if location_info.get('longitude') else None,
+                        property_type=summary_info.get('propType', ''),
+                        bedrooms=rooms_info.get('beds'),
+                        bathrooms=rooms_info.get('bathsTotal'),
+                        square_footage=int(size_info.get('livingSize', 0)) if size_info.get('livingSize') else None,
+                        lot_size=prop_data.get('lot', {}).get('lotSize2'),  # lot size in sqft
+                        build_year=summary_info.get('yearBuilt'),
+                        # Assessment values (these are what we have for valuation)
+                        assessed_value=assessed_info.get('assdTtlValue'),
+                        avm_value=market_info.get('mktTtlValue'),  # Use market value as AVM equivalent
+                        # Sale information - may not be available in basic profile
+                        last_sale_price=sale_info.get('amount', {}).get('saleamt') if sale_info.get('amount') else None,
+                        last_sale_date=sale_info.get('amount', {}).get('salerecdate') if sale_info.get('amount') else None,
+                        listing_price=None,  # Not available in basic profile
+                        rental_estimate=None  # Not available in basic profile
                     )
                     properties.append(property_obj)
                 except Exception as e:

@@ -14,6 +14,7 @@ from enum import Enum
 
 from models.data_models import PropertyDetails, MarketMetrics, ATTOMSearchCriteria, InvestmentStrategy
 from integrations.attom_api import ATTOMDataBridge
+from integrations.listing_bridge import ListingDataBridge, EnhancedDealAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,14 @@ class DealFinder:
     Continuously monitors new listings and identifies investment opportunities
     """
     
-    def __init__(self, attom_bridge: Optional[ATTOMDataBridge] = None, analysis_engine=None):
+    def __init__(self, attom_bridge: Optional[ATTOMDataBridge] = None, analysis_engine=None, rapidapi_key: Optional[str] = None):
         """Initialize the Deal Finder"""
         self.attom_bridge = attom_bridge
         self.analysis_engine = analysis_engine
+        
+        # Add listing data integration
+        self.listing_bridge = ListingDataBridge(rapidapi_key) if rapidapi_key else None
+        self.deal_analyzer = EnhancedDealAnalyzer(self.listing_bridge) if self.listing_bridge else None
         
         # State management
         self.is_running = False
@@ -107,7 +112,11 @@ class DealFinder:
         self.scan_task: Optional[asyncio.Task] = None
         self.cleanup_task: Optional[asyncio.Task] = None
         
-        logger.info("Deal Finder initialized")
+        if self.listing_bridge:
+            logger.info("Deal Finder initialized with listing data integration")
+        else:
+            logger.warning("Deal Finder initialized without listing data - deals may be inaccurate")
+            logger.info("Deal Finder initialized")
     
     async def start_monitoring(self):
         """Start the background monitoring service"""
@@ -257,60 +266,175 @@ class DealFinder:
         self.processed_properties.add(property_key)
         
         try:
-            # Basic deal analysis (simplified without full analysis engine)
-            estimated_value = property_data.estimated_value or 0
-            listing_price = property_data.last_sale_price or estimated_value
-            
-            if not listing_price or listing_price <= 0:
-                return None
-            
-            # Check if it meets basic criteria
-            if criteria.max_price and listing_price > criteria.max_price:
-                return None
-            
-            # Calculate potential profit
-            potential_profit = estimated_value - listing_price if estimated_value > listing_price else 0
-            profit_percentage = (potential_profit / listing_price * 100) if listing_price > 0 else 0
-            
-            # Determine if it's worth alerting about
-            if profit_percentage < 10:  # Less than 10% profit potential
-                return None
-            
-            # Create alert
-            alert_type = self._determine_alert_type(property_data, profit_percentage)
-            priority = self._determine_priority(profit_percentage, property_data)
-            
-            alert = PropertyAlert(
-                alert_id=str(uuid.uuid4()),
-                property_address=property_data.address,
-                alert_type=alert_type,
-                priority=priority,
-                title=f"Potential Deal: {property_data.address}",
-                description=self._generate_alert_description(property_data, profit_percentage),
-                key_metrics={
-                    "estimated_value": estimated_value,
-                    "listing_price": listing_price,
-                    "profit_percentage": profit_percentage,
-                    "bedrooms": property_data.bedrooms,
-                    "bathrooms": property_data.bathrooms,
-                    "square_feet": property_data.square_feet
-                },
-                estimated_value=estimated_value,
-                listing_price=listing_price,
-                potential_profit=potential_profit,
-                confidence_score=min(0.9, profit_percentage / 20),  # Higher profit = higher confidence
-                expires_at=datetime.now() + timedelta(days=self.alert_retention_days)
-            )
-            
-            return alert
-            
+            # Use enhanced analysis if listing bridge is available
+            if self.deal_analyzer:
+                return await self._analyze_with_listing_data(property_data, criteria)
+            else:
+                return await self._analyze_without_listing_data(property_data, criteria)
+                
         except Exception as e:
             logger.error(f"Error analyzing property {property_data.address}: {e}")
             return None
     
+    async def _analyze_with_listing_data(self, property_data, criteria: SearchCriteria) -> Optional[PropertyAlert]:
+        """Enhanced analysis using both ATTOM and current listing data"""
+        
+        # Get enhanced deal analysis
+        deal_analysis = await self.deal_analyzer.analyze_deal_with_listing(property_data, criteria)
+        
+        if not deal_analysis or not deal_analysis["is_good_deal"]:
+            return None
+        
+        # Check user price limits with actual listing price
+        listing_price = deal_analysis["current_listing_price"]
+        if criteria.max_price and listing_price > criteria.max_price:
+            return None
+        
+        # Create enhanced alert
+        profit_percentage = deal_analysis["profit_percentage"]
+        alert_type = self._determine_alert_type(property_data, profit_percentage)
+        priority = self._determine_priority(profit_percentage, property_data)
+        
+        alert = PropertyAlert(
+            alert_id=str(uuid.uuid4()),
+            property_address=property_data.address,
+            alert_type=alert_type,
+            priority=priority,
+            title=f"🎯 REAL DEAL: {profit_percentage:.1f}% Profit Potential",
+            description=self._generate_enhanced_alert_description(deal_analysis, property_data),
+            key_metrics={
+                "attom_estimated_value": deal_analysis["attom_estimated_value"],
+                "current_listing_price": deal_analysis["current_listing_price"],
+                "zestimate": deal_analysis.get("zestimate"),
+                "profit_percentage": profit_percentage,
+                "potential_profit": deal_analysis["potential_profit"],
+                "days_on_market": deal_analysis.get("days_on_market"),
+                "listing_status": deal_analysis.get("listing_status"),
+                "seller_motivation": deal_analysis.get("seller_motivation"),
+                "rental_estimate": deal_analysis.get("rental_estimate"),
+                "bedrooms": property_data.bedrooms,
+                "bathrooms": property_data.bathrooms,
+                "square_footage": property_data.square_footage
+            },
+            estimated_value=deal_analysis["attom_estimated_value"],
+            listing_price=deal_analysis["current_listing_price"],
+            potential_profit=deal_analysis["potential_profit"],
+            confidence_score=deal_analysis["deal_confidence"],
+            expires_at=datetime.now() + timedelta(days=self.alert_retention_days)
+        )
+        
+        logger.info(f"🎯 FOUND REAL DEAL: {property_data.address} - {profit_percentage:.1f}% profit")
+        return alert
+    
+    async def _analyze_without_listing_data(self, property_data, criteria: SearchCriteria) -> Optional[PropertyAlert]:
+        """Fallback analysis without listing data (less accurate)"""
+        
+        # Basic deal analysis (simplified without full analysis engine)
+        # Use ATTOM's AVM value as estimated value, fallback to assessed value
+        estimated_value = property_data.avm_value or property_data.assessed_value or 0
+        listing_price = property_data.last_sale_price or property_data.listing_price or estimated_value
+        
+        if not listing_price or listing_price <= 0:
+            return None
+        
+        # Check if it meets basic criteria
+        if criteria.max_price and listing_price > criteria.max_price:
+            return None
+        
+        # Calculate potential profit
+        potential_profit = estimated_value - listing_price if estimated_value > listing_price else 0
+        profit_percentage = (potential_profit / listing_price * 100) if listing_price > 0 else 0
+        
+        # Determine if it's worth alerting about
+        if profit_percentage < 10:  # Less than 10% profit potential
+            return None
+        
+        # Create alert
+        alert_type = self._determine_alert_type(property_data, profit_percentage)
+        priority = self._determine_priority(profit_percentage, property_data)
+        
+        alert = PropertyAlert(
+            alert_id=str(uuid.uuid4()),
+            property_address=property_data.address,
+            alert_type=alert_type,
+            priority=priority,
+            title=f"⚠️  Potential Deal: {property_data.address} (Limited Data)",
+            description=self._generate_alert_description(property_data, profit_percentage),
+            key_metrics={
+                "estimated_value": estimated_value,
+                "listing_price": listing_price,
+                "profit_percentage": profit_percentage,
+                "bedrooms": property_data.bedrooms,
+                "bathrooms": property_data.bathrooms,
+                "square_footage": property_data.square_footage,
+                "note": "Analysis based on limited data - no current listing prices"
+            },
+            estimated_value=estimated_value,
+            listing_price=listing_price,
+            potential_profit=potential_profit,
+            confidence_score=min(0.9, profit_percentage / 20),  # Higher profit = higher confidence
+            expires_at=datetime.now() + timedelta(days=self.alert_retention_days)
+        )
+        
+        return alert
+    
+    def _generate_enhanced_alert_description(self, deal_analysis: Dict, property_data) -> str:
+        """Generate enhanced alert description with listing insights"""
+        profit_percentage = deal_analysis["profit_percentage"]
+        days_on_market = deal_analysis.get("days_on_market")
+        seller_motivation = deal_analysis.get("seller_motivation", "unknown")
+        
+        bedrooms = property_data.bedrooms or "?"
+        bathrooms = property_data.bathrooms or "?"
+        square_footage = property_data.square_footage or 0
+        
+        size_info = f"{square_footage:,.0f} sqft" if square_footage else "size unknown"
+        
+        description = f"🎯 REAL INVESTMENT OPPORTUNITY: {profit_percentage:.1f}% profit potential! "
+        description += f"{bedrooms}BR/{bathrooms}BA, {size_info}. "
+        
+        # Add listing insights
+        if days_on_market:
+            description += f"Listed {days_on_market} days ago"
+            if seller_motivation in ["highly_motivated", "motivated"]:
+                description += " - seller may be motivated to negotiate. "
+            else:
+                description += ". "
+        
+        # Add rental info if available
+        rental_estimate = deal_analysis.get("rental_estimate")
+        if rental_estimate:
+            description += f"Estimated rent: ${rental_estimate:,.0f}/month. "
+        
+        description += "Current market listing vs ATTOM valuation analysis - recommend immediate review!"
+        
+        return description
+    
     def _convert_criteria_to_attom_search(self, criteria: SearchCriteria) -> ATTOMSearchCriteria:
         """Convert user criteria to ATTOM search parameters"""
+        
+        # Determine if target_locations contains postal codes (5 digits) or city names
+        zip_code = None
+        city = None
+        state = None
+        
+        if criteria.target_locations:
+            for location in criteria.target_locations:
+                # Check if it's a zip code (5 digits)
+                if location.isdigit() and len(location) == 5:
+                    zip_code = location
+                    break
+                # Check if it contains state abbreviation
+                elif len(location) == 2 and location.isupper():
+                    state = location
+                else:
+                    # Assume it's a city name
+                    city = location
+        
         return ATTOMSearchCriteria(
+            zip_code=zip_code,
+            city=city,
+            state=state,
             max_price=criteria.max_price,
             property_types=criteria.property_types,
             max_results=50
@@ -338,10 +462,15 @@ class DealFinder:
     
     def _generate_alert_description(self, property_data, profit_percentage: float) -> str:
         """Generate description for the alert"""
+        bedrooms = property_data.bedrooms or "?"
+        bathrooms = property_data.bathrooms or "?"
+        square_footage = property_data.square_footage or 0
+        
+        size_info = f"{square_footage:,.0f} sqft" if square_footage else "size unknown"
+        
         return (
             f"Property may be undervalued by {profit_percentage:.1f}%. "
-            f"{property_data.bedrooms}BR/{property_data.bathrooms}BA, "
-            f"{property_data.square_feet} sqft. Consider for quick analysis."
+            f"{bedrooms}BR/{bathrooms}BA, {size_info}. Consider for quick analysis."
         )
     
     def _alert_matches_criteria(self, alert: PropertyAlert, criteria: SearchCriteria) -> bool:
@@ -465,15 +594,23 @@ class DealFinder:
     
     def get_monitoring_status(self) -> Dict[str, Any]:
         """Get current monitoring status"""
-        return {
+        status = {
             "is_running": self.is_running,
             "monitored_properties": len(self.monitored_properties),
             "active_alerts": len(self.active_alerts),
             "user_criteria_count": len(self.user_criteria),
             "processed_properties": len(self.processed_properties),
             "scan_interval_minutes": self.scan_interval_minutes,
-            "last_scan": datetime.now().isoformat() if self.is_running else None
+            "last_scan": datetime.now().isoformat() if self.is_running else None,
+            "listing_integration_enabled": bool(self.listing_bridge)
         }
+        
+        # Add listing API usage if available
+        if self.listing_bridge:
+            listing_stats = self.listing_bridge.get_api_usage_stats()
+            status["listing_api_usage"] = listing_stats
+            
+        return status
     
     async def health_check(self) -> Dict[str, Any]:
         """Check Deal Finder health status"""
