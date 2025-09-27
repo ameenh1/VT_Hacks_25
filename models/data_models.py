@@ -303,6 +303,143 @@ class ATTOMPropertyData(BaseModel):
     city: str
     state: str
     zip_code: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
+    build_year: Optional[int] = None
+    listing_price: Optional[float] = None
+    property_type: Optional[str] = None
+    square_footage: Optional[int] = None
+    lot_size: Optional[float] = None
+    last_sale_price: Optional[float] = None
+    last_sale_date: Optional[str] = None
+    assessed_value: Optional[float] = None
+    avm_value: Optional[float] = None
+    rental_estimate: Optional[float] = None
+
+
+class ATTOMMarketData(BaseModel):
+    """ATTOM market data response model"""
+    location: str
+    median_price: Optional[float] = None
+    price_per_sqft: Optional[float] = None
+    days_on_market: Optional[int] = None
+    inventory_months: Optional[float] = None
+    price_trend_pct: Optional[float] = None
+    total_listings: Optional[int] = None
+    new_listings: Optional[int] = None
+    price_cuts_pct: Optional[float] = None
+    market_temperature: Optional[str] = None
+    analysis_date: datetime = Field(default_factory=datetime.now)
+
+
+class ATTOMSearchCriteria(BaseModel):
+    """Search criteria for ATTOM API queries"""
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    radius_miles: Optional[float] = Field(None, le=50)
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
+    min_beds: Optional[int] = None
+    max_beds: Optional[int] = None
+    min_baths: Optional[float] = None
+    max_baths: Optional[float] = None
+    property_types: Optional[List[str]] = None
+    min_year_built: Optional[int] = None
+    max_year_built: Optional[int] = None
+    min_sqft: Optional[int] = None
+    max_sqft: Optional[int] = None
+    max_results: int = Field(default=25, le=100)
+
+
+class ATTOMComparable(BaseModel):
+    """ATTOM comparable property model"""
+    property_id: str
+    address: str
+    distance_miles: float
+    sale_price: float
+    sale_date: datetime
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
+    square_footage: Optional[int] = None
+    lot_size: Optional[float] = None
+    property_type: Optional[str] = None
+    days_on_market: Optional[int] = None
+    price_per_sqft: Optional[float] = None
+
+
+class ATTOMValuationRequest(BaseModel):
+    """Request model for ATTOM property valuation"""
+    address: str
+    comp_radius_miles: float = Field(default=1.0, le=5.0)
+    max_comps: int = Field(default=5, le=15)
+    property_type_filter: Optional[str] = None
+    sale_date_months: int = Field(default=12, le=24)
+
+
+class ATTOMValuationResponse(BaseModel):
+    """Response model for ATTOM property valuation"""
+    success: bool
+    property_address: str
+    estimated_value: Optional[float] = None
+    confidence_score: Optional[float] = None
+    value_range_low: Optional[float] = None
+    value_range_high: Optional[float] = None
+    avm_value: Optional[float] = None
+    comparable_sales: List[ATTOMComparable] = []
+    market_trends: Optional[ATTOMMarketData] = None
+    valuation_date: datetime = Field(default_factory=datetime.now)
+    data_sources: List[str] = []
+    error_message: Optional[str] = None
+
+
+# ATTOM Bridge Service Models
+
+class BridgePropertySearchRequest(BaseModel):
+    """Request model for ATTOM bridge property search"""
+    search_criteria: ATTOMSearchCriteria
+    include_market_data: bool = False
+    include_rental_estimates: bool = False
+
+
+class BridgePropertySearchResponse(BaseModel):
+    """Response model for ATTOM bridge property search"""
+    success: bool
+    properties: List[ATTOMPropertyData] = []
+    total_found: int = 0
+    search_radius_miles: Optional[float] = None
+    market_summary: Optional[ATTOMMarketData] = None
+    error_message: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
+class BridgeAnalysisRequest(BaseModel):
+    """Request model for enhanced analysis via ATTOM bridge"""
+    property_address: str
+    analysis_depth: str = Field("comprehensive", pattern="^(basic|comprehensive|detailed)$")
+    include_comps: bool = True
+    include_market_analysis: bool = True
+    user_investment_goals: Optional[Dict[str, Any]] = None
+
+
+class BridgeAnalysisResponse(BaseModel):
+    """Response model for enhanced analysis via ATTOM bridge"""
+    success: bool
+    property_data: Optional[ATTOMPropertyData] = None
+    valuation: Optional[ATTOMValuationResponse] = None
+    market_analysis: Optional[ATTOMMarketData] = None
+    investment_analysis: Optional[PropertyAnalysis] = None
+    error_message: Optional[str] = None
+    processing_time_seconds: Optional[float] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+    property_id: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
     county: str
     fips_code: Optional[str] = None
     apn: Optional[str] = None

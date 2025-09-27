@@ -20,6 +20,11 @@ from models.data_models import (
     AnalysisAPIResponse, SystemHealthStatus, AgentType
 )
 from integrations.attom_api import ATTOMDataBridge
+from integrations.attom_bridge_service import get_attom_bridge_service, ATTOMBridgeService
+from integrations.attom_bridge_service import (
+    PropertySearchCriteria, PropertyValuationRequest, MarketAnalysisRequest,
+    PropertyResponse, PropertyListResponse, ValuationResponse, MarketAnalysisResponse
+)
 
 # Load environment variables
 load_dotenv()
@@ -49,23 +54,25 @@ analysis_engine = None
 customer_agent = None
 deal_finder = None
 attom_bridge = None
+attom_bridge_service = None  # New ATTOM bridge service
 coordinator = get_agent_coordinator()
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize agents and services on startup"""
-    global analysis_engine, customer_agent, deal_finder, attom_bridge
+    global analysis_engine, customer_agent, deal_finder, attom_bridge, attom_bridge_service
     
     try:
         # Initialize ATTOM Data Bridge if API key is available
         if ATTOM_API_KEY:
             attom_bridge = ATTOMDataBridge(ATTOM_API_KEY)
-            logger.info("ATTOM Data Bridge initialized")
+            attom_bridge_service = get_attom_bridge_service(ATTOM_API_KEY)
+            logger.info("ATTOM Data Bridge and Bridge Service initialized")
         else:
             logger.warning("ATTOM_API_KEY not found - using mock data for property analysis")
         
-        # Initialize Analysis Engine (Agent 2) 
-        analysis_engine = AnalysisEngine(GEMINI_API_KEY)
+        # Initialize Analysis Engine (Agent 2) with ATTOM bridge service
+        analysis_engine = AnalysisEngine(GEMINI_API_KEY, attom_bridge_service)
         
         # Initialize Customer Agent (Agent 1)
         customer_agent = CustomerAgent(GEMINI_API_KEY)
@@ -732,6 +739,99 @@ async def demo_all_agents():
     }
     
     return results
+
+
+# =============================================================================
+# ATTOM BRIDGE API ENDPOINTS
+# =============================================================================
+
+@app.post("/api/attom/search", response_model=PropertyListResponse)
+async def search_properties_attom(criteria: PropertySearchCriteria):
+    """Search for properties using ATTOM Data API"""
+    try:
+        if not attom_bridge_service:
+            raise HTTPException(status_code=503, detail="ATTOM bridge service not available")
+        
+        logger.info(f"ATTOM property search requested")
+        result = await attom_bridge_service.search_properties(criteria)
+        
+        if not result.success:
+            raise HTTPException(status_code=400, detail=result.error_message)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ATTOM property search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Property search failed: {str(e)}")
+
+
+@app.get("/api/attom/property/{address:path}", response_model=PropertyResponse)
+async def get_property_details_attom(address: str):
+    """Get detailed property information using ATTOM Data API"""
+    try:
+        if not attom_bridge_service:
+            raise HTTPException(status_code=503, detail="ATTOM bridge service not available")
+        
+        logger.info(f"ATTOM property details requested for: {address}")
+        result = await attom_bridge_service.get_property_details(address)
+        
+        if not result.success:
+            raise HTTPException(status_code=404, detail=result.error_message)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ATTOM property details failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get property details: {str(e)}")
+
+
+@app.post("/api/attom/valuation", response_model=ValuationResponse)
+async def get_property_valuation_attom(request: PropertyValuationRequest):
+    """Get property valuation with comparable sales using ATTOM Data API"""
+    try:
+        if not attom_bridge_service:
+            raise HTTPException(status_code=503, detail="ATTOM bridge service not available")
+        
+        logger.info(f"ATTOM property valuation requested for: {request.address}")
+        result = await attom_bridge_service.get_property_valuation(request)
+        
+        if not result.success:
+            raise HTTPException(status_code=400, detail=result.error_message)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ATTOM property valuation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Property valuation failed: {str(e)}")
+
+
+@app.post("/api/attom/market-analysis", response_model=MarketAnalysisResponse)
+async def get_market_analysis_attom(request: MarketAnalysisRequest):
+    """Get market analysis for a location using ATTOM Data API"""
+    try:
+        if not attom_bridge_service:
+            raise HTTPException(status_code=503, detail="ATTOM bridge service not available")
+        
+        logger.info(f"ATTOM market analysis requested")
+        result = await attom_bridge_service.get_market_analysis(request)
+        
+        if not result.success:
+            raise HTTPException(status_code=400, detail=result.error_message)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ATTOM market analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Market analysis failed: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn

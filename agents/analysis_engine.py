@@ -1,6 +1,7 @@
 """
 Agent 2: Analysis Engine for Real Estate Investment Platform
 Handles complex property valuations, market analysis, and risk assessments using Gemini 1.5 Pro
+Now integrated with ATTOM Data API for real-time property and market data
 """
 
 import google.generativeai as genai
@@ -12,80 +13,38 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 import statistics
+import asyncio
+
+# Import ATTOM bridge service and models
+from integrations.attom_bridge_service import get_attom_bridge_service, ATTOMBridgeService
+from models.data_models import (
+    PropertyAnalysis, PropertyDetails, MarketMetrics, ComparableProperty,
+    RiskAssessment, RiskCategory, CashFlowProjection, StrategyRecommendation,
+    InvestmentReturns, InvestmentStrategy, AnalysisType, AgentType,
+    ATTOMPropertyData, ATTOMValuationRequest, ATTOMValuationResponse,
+    BridgeAnalysisRequest, BridgeAnalysisResponse
+)
 
 logger = logging.getLogger(__name__)
-
-class PropertyType(Enum):
-    SINGLE_FAMILY = "single_family"
-    CONDO = "condo"
-    TOWNHOUSE = "townhouse"
-    MULTI_FAMILY = "multi_family"
-    COMMERCIAL = "commercial"
-
-class InvestmentStrategy(Enum):
-    BUY_AND_HOLD = "buy_and_hold"
-    FLIP = "flip"
-    BRRRR = "brrrr"  # Buy, Rehab, Rent, Refinance, Repeat
-    WHOLESALE = "wholesale"
-
-@dataclass
-class PropertyData:
-    """Core property information structure"""
-    address: str
-    city: str
-    state: str
-    zip_code: str
-    property_type: PropertyType
-    bedrooms: int
-    bathrooms: float
-    square_feet: int
-    lot_size: Optional[float] = None
-    year_built: Optional[int] = None
-    listing_price: Optional[float] = None
-    zestimate: Optional[float] = None
-    rent_estimate: Optional[float] = None
-    
-@dataclass 
-class MarketData:
-    """Market conditions and trends"""
-    median_home_price: float
-    price_per_sqft: float
-    days_on_market: int
-    inventory_months: float
-    price_trend_3m: float  # percentage change
-    price_trend_6m: float
-    price_trend_1y: float
-    rental_yield_avg: float
-    cap_rate_avg: float
-
-@dataclass
-class AnalysisResult:
-    """Comprehensive analysis output"""
-    property_data: PropertyData
-    arv_estimate: float
-    deal_score: float  # 0-100 scale
-    investment_potential: str  # "Excellent", "Good", "Fair", "Poor"
-    recommended_strategy: InvestmentStrategy
-    cash_flow_projection: Dict[str, float]
-    risk_assessment: Dict[str, Any]
-    comparable_properties: List[Dict[str, Any]]
-    market_analysis: str
-    key_insights: List[str]
-    confidence_score: float  # 0-1 scale
 
 class AnalysisEngine:
     """
     Agent 2: Advanced Real Estate Analysis Engine
     Uses Gemini 1.5 Pro for sophisticated property analysis and market evaluation
+    Integrated with ATTOM Data API for real-time property and market data
     """
     
-    def __init__(self, api_key: str):
-        """Initialize the Analysis Engine with Gemini Pro model"""
+    def __init__(self, api_key: str, attom_bridge_service: Optional[ATTOMBridgeService] = None):
+        """Initialize the Analysis Engine with Gemini Pro model and ATTOM integration"""
         self.api_key = api_key
+        self.agent_type = AgentType.ANALYSIS_ENGINE
         genai.configure(api_key=api_key)
         
-        # Use Gemini 2.5 Pro for complex analysis tasks
-        self.model = genai.GenerativeModel('gemini-2.5-pro')
+        # Use Gemini 1.5 Pro for complex analysis tasks
+        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        
+        # ATTOM integration
+        self.attom_bridge = attom_bridge_service
         
         # Analysis parameters
         self.analysis_prompts = self._load_analysis_prompts()
@@ -97,6 +56,186 @@ class AnalysisEngine:
             'appreciation_potential': 0.10,
             'risk_factors': 0.10
         }
+        
+        # ARV calculation parameters
+        self.arv_weights = {
+            'comparable_sales': 0.40,
+            'listing_price': 0.25,
+            'assessed_value': 0.20,
+            'avm_estimate': 0.15
+        }
+        
+        logger.info("Analysis Engine initialized with Gemini 1.5 Pro")
+    
+    async def analyze_property_with_attom(self, address: str, analysis_type: AnalysisType = AnalysisType.COMPREHENSIVE) -> PropertyAnalysis:
+        """
+        Comprehensive property analysis using ATTOM Data API
+        Main method for Agent 2 property analysis workflow
+        """
+        try:
+            if not self.attom_bridge:
+                logger.warning("ATTOM bridge not available, using mock data analysis")
+                return await self._analyze_property_mock(address, analysis_type)
+            
+            # Step 1: Get property details from ATTOM
+            property_response = await self.attom_bridge.get_property_details(address)
+            if not property_response.success:
+                raise Exception(f"Failed to fetch property data: {property_response.error_message}")
+            
+            property_data = property_response.property_data
+            
+            # Step 2: Get property valuation with comparables
+            valuation_request = ATTOMValuationRequest(
+                address=address,
+                comp_radius_miles=1.0,
+                max_comps=5,
+                sale_date_months=12
+            )
+            valuation_response = await self.attom_bridge.get_property_valuation(valuation_request)
+            
+            # Step 3: Get market analysis
+            city = property_data.get('city', 'Unknown')
+            state = property_data.get('state', 'Unknown')
+            market_request = {
+                'city': city,
+                'state': state,
+                'property_type': property_data.get('property_type'),
+                'time_period_months': 12
+            }
+            market_response = await self.attom_bridge.get_market_analysis(market_request)
+            
+            # Step 4: Perform AI-powered analysis using Gemini
+            analysis_result = await self._perform_ai_analysis(
+                property_data, valuation_response, market_response, analysis_type
+            )
+            
+            logger.info(f"Property analysis completed for {address}")
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Property analysis failed for {address}: {e}")
+            # Return error analysis
+            return await self._create_error_analysis(address, str(e))
+    
+    async def quick_analysis(self, address: str, listing_price: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Quick property analysis for fast deal evaluation
+        Optimized for Agent 1 (Customer Agent) quick responses
+        """
+        try:
+            if not self.attom_bridge:
+                return await self._quick_analysis_mock(address, listing_price)
+            
+            # Get basic property data
+            property_response = await self.attom_bridge.get_property_details(address)
+            if not property_response.success:
+                return {
+                    "success": False,
+                    "error": property_response.error_message,
+                    "address": address
+                }
+            
+            property_data = property_response.property_data
+            
+            # Quick valuation calculation
+            arv_estimate = await self._quick_arv_calculation(property_data, listing_price)
+            
+            # Quick deal scoring
+            deal_score = await self._quick_deal_score(property_data, arv_estimate, listing_price)
+            
+            # Investment potential assessment
+            investment_potential = self._assess_investment_potential(deal_score)
+            
+            # Generate key insight using AI
+            key_insight = await self._generate_quick_insight(property_data, deal_score, arv_estimate)
+            
+            return {
+                "success": True,
+                "address": address,
+                "deal_score": deal_score,
+                "investment_potential": investment_potential,
+                "arv_estimate": arv_estimate,
+                "recommended_strategy": InvestmentStrategy.BUY_AND_HOLD,
+                "monthly_cash_flow": await self._quick_cash_flow_estimate(property_data, arv_estimate),
+                "key_insight": key_insight,
+                "confidence_score": 0.7  # Quick analysis has lower confidence
+            }
+            
+        except Exception as e:
+            logger.error(f"Quick analysis failed for {address}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "address": address
+            }
+    
+    async def _perform_ai_analysis(self, property_data: Dict, valuation_data: ATTOMValuationResponse, 
+                                 market_data: Any, analysis_type: AnalysisType) -> PropertyAnalysis:
+        """
+        Use Gemini 1.5 Pro to perform sophisticated analysis of property and market data
+        """
+        try:
+            # Prepare comprehensive data context for AI analysis
+            analysis_context = self._prepare_analysis_context(property_data, valuation_data, market_data)
+            
+            # Generate AI-powered analysis
+            if analysis_type == AnalysisType.COMPREHENSIVE:
+                analysis_prompt = self._get_comprehensive_analysis_prompt(analysis_context)
+            else:
+                analysis_prompt = self._get_basic_analysis_prompt(analysis_context)
+            
+            # Get AI analysis
+            response = await self.model.generate_content_async(analysis_prompt)
+            ai_analysis = self._parse_ai_response(response.text)
+            
+            # Build comprehensive analysis result
+            return await self._build_property_analysis(
+                property_data, valuation_data, market_data, ai_analysis
+            )
+            
+        except Exception as e:
+            logger.error(f"AI analysis failed: {e}")
+            return await self._create_fallback_analysis(property_data, valuation_data)
+    
+    def _prepare_analysis_context(self, property_data: Dict, valuation_data: ATTOMValuationResponse, 
+                                market_data: Any) -> str:
+        """Prepare comprehensive context for AI analysis"""
+        context = f"""
+        PROPERTY ANALYSIS REQUEST
+        ========================
+        
+        Property Details:
+        - Address: {property_data.get('address', 'Unknown')}
+        - Type: {property_data.get('property_type', 'Unknown')}
+        - Bedrooms: {property_data.get('bedrooms', 'Unknown')}
+        - Bathrooms: {property_data.get('bathrooms', 'Unknown')}
+        - Square Feet: {property_data.get('square_footage', 'Unknown')}
+        - Year Built: {property_data.get('build_year', 'Unknown')}
+        - Listing Price: ${property_data.get('listing_price', 'Unknown'):,}
+        - Assessed Value: ${property_data.get('assessed_value', 'Unknown'):,}
+        
+        Valuation Data:
+        - Estimated Value: ${valuation_data.estimated_value:,}
+        - Confidence Score: {valuation_data.confidence_score:.2f}
+        - Value Range: ${valuation_data.value_range_low:,} - ${valuation_data.value_range_high:,}
+        - Number of Comparables: {len(valuation_data.comparable_sales)}
+        
+        Market Data:
+        - Location: {market_data.location if market_data.success else 'Data unavailable'}
+        - Market Temperature: {getattr(market_data, 'market_temperature', 'Unknown')}
+        - Median Price: ${getattr(market_data, 'median_price', 0):,}
+        - Days on Market: {getattr(market_data, 'days_on_market', 'Unknown')}
+        
+        Comparable Sales Summary:
+        """
+        
+        # Add comparable sales data
+        for i, comp in enumerate(valuation_data.comparable_sales[:3], 1):
+            context += f"""
+        Comp {i}: {comp.address} - ${comp.sale_price:,} ({comp.distance_miles:.1f} mi)
+        """
+        
+        return context
 
         logger.info("Analysis Engine initialized with Gemini 2.5 Pro")
 

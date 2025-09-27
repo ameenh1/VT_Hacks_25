@@ -1,9 +1,30 @@
+# Core web framework and server
 fastapi
 uvicorn[standard]
+
+# HTTP client and async support  
 httpx
+aiofiles
+
+# Environment and configuration
 python-dotenv
+
+# AI and Machine Learning
+google-generativeai
+pydantic
+
+# Data handling and validation
+requests
+pandas
+numpy
+
+# Date and time utilities
+python-dateutil
+
+# Testing
 pytest
 pytest-asyncio
 respx
-google-generativeai
-pydantic
+
+# ATTOM Data API Integration
+# (No specific package needed - using requests/httpx)
