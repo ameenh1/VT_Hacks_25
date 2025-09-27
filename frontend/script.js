@@ -21,6 +21,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Navigation functionality
     function showPage(pageId) {
+        // Special handling for demo page - redirect to separate HTML file
+        if (pageId === 'demo') {
+            window.location.href = 'pages/try-equitynest.html';
+            return;
+        }
+
         // Hide all pages
         document.querySelectorAll('.page').forEach(page => {
             page.classList.remove('active');
@@ -532,3 +538,818 @@ const loadingStyles = `
 const style = document.createElement('style');
 style.textContent = loadingStyles;
 document.head.appendChild(style);
+
+document.body.classList.add('loaded');
+
+// ===== TRY EQUITYNEST DEMO PAGE FUNCTIONALITY =====
+
+// Demo page state
+let demoPageInitialized = false;
+let chatSession = null;
+
+// Initialize demo page functionality
+function initDemoPage() {
+    if (demoPageInitialized) return;
+    
+    console.log('Initializing Try EquityNest demo page...');
+    
+    // Initialize location examples
+    initLocationExamples();
+    
+    // Initialize budget functionality
+    initBudgetFunctionality();
+    
+    // Initialize search functionality
+    initSearchFunctionality();
+    
+    // Initialize chat functionality
+    initChatFunctionality();
+    
+    demoPageInitialized = true;
+    console.log('✅ Demo page initialized successfully');
+}
+
+// Location examples functionality
+function initLocationExamples() {
+    const examples = document.querySelectorAll('.demo-example');
+    const locationInput = document.getElementById('demo-location');
+    
+    if (!locationInput) return;
+    
+    examples.forEach(example => {
+        example.addEventListener('click', function() {
+            locationInput.value = this.textContent.trim();
+            locationInput.focus();
+            
+            // Add a subtle animation to show the input was updated
+            locationInput.style.transform = 'scale(1.02)';
+            setTimeout(() => {
+                locationInput.style.transform = 'scale(1)';
+            }, 150);
+        });
+    });
+}
+
+// Price slider functionality
+// Budget functionality
+function initBudgetFunctionality() {
+    const customBudgetToggle = document.getElementById('custom-budget-toggle');
+    const customBudgetInputs = document.getElementById('custom-budget-inputs');
+    const minPriceSelect = document.getElementById('min-price');
+    const maxPriceSelect = document.getElementById('max-price');
+    
+    if (!customBudgetToggle || !customBudgetInputs) {
+        console.warn('Budget elements not found');
+        return;
+    }
+    
+    // Handle custom budget toggle
+    customBudgetToggle.addEventListener('change', function() {
+        if (this.checked) {
+            customBudgetInputs.style.display = 'grid';
+            // Disable select dropdowns when using custom inputs
+            if (minPriceSelect) minPriceSelect.disabled = true;
+            if (maxPriceSelect) maxPriceSelect.disabled = true;
+        } else {
+            customBudgetInputs.style.display = 'none';
+            // Re-enable select dropdowns
+            if (minPriceSelect) minPriceSelect.disabled = false;
+            if (maxPriceSelect) maxPriceSelect.disabled = false;
+        }
+    });
+    
+    // Format number inputs with commas as user types
+    const customMinPrice = document.getElementById('custom-min-price');
+    const customMaxPrice = document.getElementById('custom-max-price');
+    
+    if (customMinPrice) {
+        customMinPrice.addEventListener('input', formatNumberInput);
+    }
+    
+    if (customMaxPrice) {
+        customMaxPrice.addEventListener('input', formatNumberInput);
+    }
+    
+    // Validation for min/max relationship
+    function validateBudgetRange() {
+        const isCustom = customBudgetToggle.checked;
+        let minVal, maxVal;
+        
+        if (isCustom) {
+            minVal = parseInt(customMinPrice?.value) || 0;
+            maxVal = parseInt(customMaxPrice?.value) || 0;
+        } else {
+            minVal = parseInt(minPriceSelect?.value) || 0;
+            maxVal = parseInt(maxPriceSelect?.value) || 0;
+        }
+        
+        if (minVal > 0 && maxVal > 0 && minVal >= maxVal) {
+            // Show validation message
+            console.warn('Minimum price should be less than maximum price');
+            return false;
+        }
+        
+        return true;
+    }
+    
+    // Add change listeners for validation
+    if (minPriceSelect) {
+        minPriceSelect.addEventListener('change', validateBudgetRange);
+    }
+    
+    if (maxPriceSelect) {
+        maxPriceSelect.addEventListener('change', validateBudgetRange);
+    }
+    
+    if (customMinPrice) {
+        customMinPrice.addEventListener('blur', validateBudgetRange);
+    }
+    
+    if (customMaxPrice) {
+        customMaxPrice.addEventListener('blur', validateBudgetRange);
+    }
+}
+
+function formatNumberInput(event) {
+    let value = event.target.value.replace(/,/g, '');
+    if (value && !isNaN(value)) {
+        // Add commas for thousands
+        event.target.value = parseInt(value).toLocaleString();
+    }
+}
+
+// Search functionality
+function initSearchFunctionality() {
+    const searchButton = document.getElementById('demo-search-btn');
+    
+    if (!searchButton) {
+        console.warn('Search button not found');
+        return;
+    }
+    
+    searchButton.addEventListener('click', handleSearch);
+}
+
+async function handleSearch() {
+    console.log('Handling property search...');
+    
+    // Get form data
+    const searchData = getSearchFormData();
+    
+    if (!validateSearchData(searchData)) {
+        return;
+    }
+    
+    // Show loading state
+    showLoadingState();
+    
+    try {
+        // Simulate API call (replace with actual API integration)
+        await simulatePropertySearch(searchData);
+        
+        // Show results
+        displaySearchResults(searchData);
+        
+    } catch (error) {
+        console.error('Search failed:', error);
+        showSearchError(error.message);
+    } finally {
+        hideLoadingState();
+    }
+}
+
+function getSearchFormData() {
+    const customBudgetEnabled = document.getElementById('custom-budget-toggle')?.checked;
+    
+    let minPrice, maxPrice;
+    
+    if (customBudgetEnabled) {
+        minPrice = parseInt(document.getElementById('custom-min-price')?.value) || 0;
+        maxPrice = parseInt(document.getElementById('custom-max-price')?.value) || 0;
+    } else {
+        minPrice = parseInt(document.getElementById('min-price')?.value) || 0;
+        maxPrice = parseInt(document.getElementById('max-price')?.value) || 0;
+    }
+    
+    return {
+        location: document.getElementById('demo-location')?.value || '',
+        propertyTypes: getSelectedStrategies(),
+        budget: {
+            min: minPrice,
+            max: maxPrice,
+            customBudget: customBudgetEnabled
+        }
+    };
+}
+
+function getSelectedStrategies() {
+    const strategies = [];
+    
+    if (document.getElementById('fixer-upper')?.checked) {
+        strategies.push('fixer-upper');
+    }
+    if (document.getElementById('long-term-flow')?.checked) {
+        strategies.push('long-term-cashflow');
+    }
+    if (document.getElementById('quick-flip')?.checked) {
+        strategies.push('quick-buy-sell');
+    }
+    
+    return strategies;
+}
+
+function validateSearchData(data) {
+    if (!data.location || data.location.trim() === '') {
+        alert('Please enter a location (city, state, ZIP code, or address)');
+        return false;
+    }
+    
+    if (data.propertyTypes.length === 0) {
+        alert('Please select at least one property type');
+        return false;
+    }
+    
+    return true;
+}
+
+async function simulatePropertySearch(searchData) {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    console.log('Search parameters:', searchData);
+}
+
+function displaySearchResults(searchData) {
+    const resultsSection = document.getElementById('demo-results-section');
+    const resultsGrid = document.getElementById('demo-results-grid');
+    
+    if (!resultsSection || !resultsGrid) {
+        console.warn('Results section elements not found');
+        return;
+    }
+    
+    // Generate sample results
+    const sampleResults = generateSampleResults(searchData);
+    
+    // Clear previous results
+    resultsGrid.innerHTML = '';
+    
+    // Add result cards
+    sampleResults.forEach(property => {
+        const card = createPropertyCard(property);
+        resultsGrid.appendChild(card);
+    });
+    
+    // Show results section
+    resultsSection.style.display = 'block';
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function generateSampleResults(searchData) {
+    const location = `${searchData.city || 'Sample City'}, ${searchData.state || 'ST'}`;
+    const strategies = searchData.strategies;
+    
+    return [
+        {
+            price: '$245,000',
+            address: `123 Investment St, ${location}`,
+            bedrooms: 3,
+            bathrooms: 2,
+            sqft: 1850,
+            tags: strategies.slice(0, 2),
+            analysis: {
+                potential: 'High',
+                roi: '15.2%',
+                cashFlow: '+$420/month'
+            }
+        },
+        {
+            price: '$189,500',
+            address: `456 Opportunity Ave, ${location}`,
+            bedrooms: 2,
+            bathrooms: 1,
+            sqft: 1200,
+            tags: strategies.slice(0, 1),
+            analysis: {
+                potential: 'Medium',
+                roi: '12.8%',
+                cashFlow: '+$280/month'
+            }
+        },
+        {
+            price: '$315,000',
+            address: `789 Profit Plaza, ${location}`,
+            bedrooms: 4,
+            bathrooms: 2.5,
+            sqft: 2200,
+            tags: strategies,
+            analysis: {
+                potential: 'High',
+                roi: '18.5%',
+                cashFlow: '+$650/month'
+            }
+        }
+    ];
+}
+
+function createPropertyCard(property) {
+    const card = document.createElement('div');
+    card.className = 'demo-property-card animate-fade-in';
+    
+    const strategyLabels = {
+        'fixer-upper': 'Fixer-Upper',
+        'long-term-cashflow': 'Cash Flow',
+        'quick-buy-sell': 'Quick Flip'
+    };
+    
+    card.innerHTML = `
+        <div class="demo-property-image">
+            <i data-lucide="home" size="48"></i>
+        </div>
+        <div class="demo-property-info">
+            <div class="demo-property-price">${property.price}</div>
+            <div class="demo-property-address">${property.address}</div>
+            <div class="demo-property-details">
+                <div class="demo-property-detail">
+                    <i data-lucide="bed" size="16"></i>
+                    <span>${property.bedrooms} bed</span>
+                </div>
+                <div class="demo-property-detail">
+                    <i data-lucide="bath" size="16"></i>
+                    <span>${property.bathrooms} bath</span>
+                </div>
+                <div class="demo-property-detail">
+                    <i data-lucide="maximize" size="16"></i>
+                    <span>${property.sqft} sqft</span>
+                </div>
+            </div>
+            <div class="demo-property-tags">
+                ${property.tags.map(tag => 
+                    `<span class="demo-property-tag">${strategyLabels[tag] || tag}</span>`
+                ).join('')}
+            </div>
+        </div>
+    `;
+    
+    return card;
+}
+
+// Chat functionality
+function initChatFunctionality() {
+    const chatInput = document.getElementById('demo-chat-input');
+    const sendButton = document.getElementById('demo-chat-send');
+    
+    if (!chatInput || !sendButton) {
+        console.warn('Chat elements not found');
+        return;
+    }
+    
+    sendButton.addEventListener('click', handleChatMessage);
+    
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleChatMessage();
+        }
+    });
+}
+
+async function handleChatMessage() {
+    const chatInput = document.getElementById('demo-chat-input');
+    const messagesContainer = document.getElementById('demo-chat-messages');
+    
+    if (!chatInput || !messagesContainer) return;
+    
+    const message = chatInput.value.trim();
+    if (!message) return;
+    
+    // Clear input
+    chatInput.value = '';
+    
+    // Add user message
+    addChatMessage(message, 'user');
+    
+    // Simulate AI processing
+    setTimeout(async () => {
+        const response = await generateAIResponse(message);
+        addChatMessage(response, 'ai');
+    }, 1000);
+}
+
+function addChatMessage(content, type) {
+    const messagesContainer = document.getElementById('demo-chat-messages');
+    if (!messagesContainer) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `demo-message demo-message-${type}`;
+    
+    messageDiv.innerHTML = `
+        <div class="demo-message-content">
+            <p>${content}</p>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+async function generateAIResponse(userMessage) {
+    // Simulate AI responses based on message content
+    const responses = {
+        default: "I'd be happy to help you with your real estate investment questions! I can assist with property analysis, market insights, and finding the right investment opportunities.",
+        
+        price: "Property prices vary significantly by location and market conditions. I analyze current market data, comparable sales, and price trends to help you identify undervalued opportunities.",
+        
+        location: "Location is crucial for real estate investment success. I consider factors like job growth, population trends, school districts, and future development plans when evaluating areas.",
+        
+        cash: "Cash flow properties typically offer steady monthly income. I look for properties where rental income exceeds all expenses (mortgage, taxes, insurance, maintenance) by a healthy margin.",
+        
+        flip: "For fix-and-flip properties, I analyze renovation costs, after-repair value (ARV), and local market demand. The key is finding properties with good bones in desirable neighborhoods."
+    };
+    
+    const lowerMessage = userMessage.toLowerCase();
+    
+    if (lowerMessage.includes('price') || lowerMessage.includes('cost')) {
+        return responses.price;
+    } else if (lowerMessage.includes('location') || lowerMessage.includes('area') || lowerMessage.includes('where')) {
+        return responses.location;
+    } else if (lowerMessage.includes('cash') || lowerMessage.includes('rent') || lowerMessage.includes('income')) {
+        return responses.cash;
+    } else if (lowerMessage.includes('flip') || lowerMessage.includes('fix') || lowerMessage.includes('renovation')) {
+        return responses.flip;
+    } else {
+        return responses.default;
+    }
+}
+
+// Loading states
+function showLoadingState() {
+    const loading = document.getElementById('demo-loading');
+    if (loading) {
+        loading.style.display = 'flex';
+    }
+}
+
+function hideLoadingState() {
+    const loading = document.getElementById('demo-loading');
+    if (loading) {
+        loading.style.display = 'none';
+    }
+}
+
+function showSearchError(message) {
+    alert(`Search Error: ${message}`);
+}
+
+// Initialize demo page when it becomes active
+const originalShowPage = showPage;
+showPage = function(pageId) {
+    originalShowPage(pageId);
+    
+    // Initialize demo page when it's shown
+    if (pageId === 'demo') {
+        setTimeout(() => {
+            initDemoPage();
+            // Re-initialize Lucide icons
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }, 100);
+    }
+};
+
+// ===== BACKEND API INTEGRATION =====
+
+// API Configuration
+const API_CONFIG = {
+    baseUrl: 'http://localhost:8000', // Customer Agent Server
+    endpoints: {
+        chat: '/api/chat',
+        search: '/api/search',
+        preferences: '/api/preferences'
+    }
+};
+
+// API Integration Functions
+class EquityNestAPI {
+    constructor() {
+        this.sessionId = this.generateSessionId();
+    }
+    
+    generateSessionId() {
+        return 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    }
+    
+    async sendChatMessage(message, context = {}) {
+        try {
+            const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.chat}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: this.sessionId,
+                    context: {
+                        page: 'demo',
+                        user_preferences: context.preferences || {},
+                        search_criteria: context.searchCriteria || {}
+                    }
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Chat API request failed: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data.response || data.message || 'Sorry, I had trouble processing that request.';
+            
+        } catch (error) {
+            console.error('Chat API Error:', error);
+            // Fallback to simulated response
+            return await generateAIResponse(message);
+        }
+    }
+    
+    async searchProperties(searchData) {
+        try {
+            const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.search}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    location: {
+                        state: searchData.state,
+                        city: searchData.city,
+                        zip_code: searchData.zip
+                    },
+                    investment_strategies: searchData.strategies,
+                    price_range: {
+                        min: searchData.priceRange.min,
+                        max: searchData.priceRange.max
+                    },
+                    preferences: {
+                        property_types: searchData.strategies,
+                        budget_range: searchData.priceRange
+                    }
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Search API request failed: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data.properties || data.results || [];
+            
+        } catch (error) {
+            console.error('Search API Error:', error);
+            // Fallback to simulated results
+            return generateSampleResults(searchData);
+        }
+    }
+    
+    async saveUserPreferences(preferences) {
+        try {
+            const response = await fetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.preferences}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    preferences: preferences
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Preferences API request failed: ${response.status}`);
+            }
+            
+            return await response.json();
+            
+        } catch (error) {
+            console.error('Preferences API Error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+}
+
+// Global API instance
+const equityNestAPI = new EquityNestAPI();
+
+// Enhanced API-integrated functions
+async function handleChatMessageWithAPI() {
+    const chatInput = document.getElementById('demo-chat-input');
+    const messagesContainer = document.getElementById('demo-chat-messages');
+    
+    if (!chatInput || !messagesContainer) return;
+    
+    const message = chatInput.value.trim();
+    if (!message) return;
+    
+    // Clear input
+    chatInput.value = '';
+    
+    // Add user message
+    addChatMessage(message, 'user');
+    
+    try {
+        // Get current search context if available
+        const searchContext = {
+            searchCriteria: getSearchFormData(),
+            preferences: getSelectedStrategies()
+        };
+        
+        // Send to API
+        const response = await equityNestAPI.sendChatMessage(message, searchContext);
+        addChatMessage(response, 'ai');
+        
+    } catch (error) {
+        console.error('Chat error:', error);
+        addChatMessage('Sorry, I\'m having trouble connecting right now. Please try again later.', 'ai');
+    }
+}
+
+async function handleSearchWithAPI() {
+    console.log('Handling property search with API integration...');
+    
+    // Get form data
+    const searchData = getSearchFormData();
+    
+    if (!validateSearchData(searchData)) {
+        return;
+    }
+    
+    // Save user preferences
+    await equityNestAPI.saveUserPreferences({
+        location: searchData,
+        investment_strategies: searchData.strategies,
+        price_range: searchData.priceRange
+    });
+    
+    // Show loading state
+    showLoadingState();
+    
+    try {
+        // Call API for property search
+        const properties = await equityNestAPI.searchProperties(searchData);
+        
+        // Display results
+        displayAPISearchResults(properties, searchData);
+        
+        // Add chat message about search
+        setTimeout(() => {
+            addChatMessage(
+                `I found ${properties.length} properties matching your criteria. These properties align with your selected investment strategies and price range. Would you like me to explain the analysis for any specific property?`, 
+                'ai'
+            );
+        }, 500);
+        
+    } catch (error) {
+        console.error('Search failed:', error);
+        showSearchError(error.message);
+    } finally {
+        hideLoadingState();
+    }
+}
+
+function displayAPISearchResults(properties, searchData) {
+    const resultsSection = document.getElementById('demo-results-section');
+    const resultsGrid = document.getElementById('demo-results-grid');
+    
+    if (!resultsSection || !resultsGrid) {
+        console.warn('Results section elements not found');
+        return;
+    }
+    
+    // Clear previous results
+    resultsGrid.innerHTML = '';
+    
+    // Handle empty results
+    if (!properties || properties.length === 0) {
+        resultsGrid.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 2rem;">
+                <h3>No properties found</h3>
+                <p>Try adjusting your search criteria or expanding your location.</p>
+            </div>
+        `;
+    } else {
+        // Add result cards
+        properties.forEach(property => {
+            const card = createAPIPropertyCard(property);
+            resultsGrid.appendChild(card);
+        });
+    }
+    
+    // Show results section
+    resultsSection.style.display = 'block';
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function createAPIPropertyCard(property) {
+    const card = document.createElement('div');
+    card.className = 'demo-property-card animate-fade-in';
+    
+    // Handle both API response format and sample data format
+    const price = property.price || property.list_price || '$0';
+    const address = property.address || property.full_address || 'Address not available';
+    const bedrooms = property.bedrooms || property.beds || 'N/A';
+    const bathrooms = property.bathrooms || property.baths || 'N/A';
+    const sqft = property.sqft || property.square_feet || property.size || 'N/A';
+    const tags = property.tags || property.investment_types || ['Property'];
+    
+    card.innerHTML = `
+        <div class="demo-property-image">
+            ${property.image_url ? 
+                `<img src="${property.image_url}" alt="Property" style="width: 100%; height: 100%; object-fit: cover;">` :
+                `<i data-lucide="home" size="48"></i>`
+            }
+        </div>
+        <div class="demo-property-info">
+            <div class="demo-property-price">${price}</div>
+            <div class="demo-property-address">${address}</div>
+            <div class="demo-property-details">
+                <div class="demo-property-detail">
+                    <i data-lucide="bed" size="16"></i>
+                    <span>${bedrooms} bed</span>
+                </div>
+                <div class="demo-property-detail">
+                    <i data-lucide="bath" size="16"></i>
+                    <span>${bathrooms} bath</span>
+                </div>
+                <div class="demo-property-detail">
+                    <i data-lucide="maximize" size="16"></i>
+                    <span>${sqft} sqft</span>
+                </div>
+            </div>
+            <div class="demo-property-tags">
+                ${Array.isArray(tags) ? tags.map(tag => 
+                    `<span class="demo-property-tag">${tag}</span>`
+                ).join('') : `<span class="demo-property-tag">${tags}</span>`}
+            </div>
+            ${property.ai_analysis ? `
+                <div class="demo-property-analysis">
+                    <small><strong>AI Analysis:</strong> ${property.ai_analysis}</small>
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    return card;
+}
+
+// Update the existing handlers to use API integration
+function updateDemoPageHandlers() {
+    const searchButton = document.getElementById('demo-search-btn');
+    const chatInput = document.getElementById('demo-chat-input');
+    const sendButton = document.getElementById('demo-chat-send');
+    
+    if (searchButton) {
+        searchButton.removeEventListener('click', handleSearch);
+        searchButton.addEventListener('click', handleSearchWithAPI);
+    }
+    
+    if (sendButton) {
+        sendButton.removeEventListener('click', handleChatMessage);
+        sendButton.addEventListener('click', handleChatMessageWithAPI);
+    }
+    
+    if (chatInput) {
+        chatInput.removeEventListener('keypress', handleChatKeypress);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleChatMessageWithAPI();
+            }
+        });
+    }
+}
+
+function handleChatKeypress(e) {
+    if (e.key === 'Enter') {
+        handleChatMessageWithAPI();
+    }
+}
+
+// Update initialization to use API handlers
+const originalInitDemoPage = initDemoPage;
+initDemoPage = function() {
+    if (demoPageInitialized) return;
+    
+    console.log('Initializing Try EquityNest demo page with API integration...');
+    
+    // Initialize price sliders
+    initPriceSliders();
+    
+    // Initialize search and chat with API integration
+    updateDemoPageHandlers();
+    
+    demoPageInitialized = true;
+    console.log('✅ Demo page with API integration initialized successfully');
+};
+
+document.head.appendChild(style);
+
+document.body.classList.add('loaded');
