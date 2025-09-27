@@ -16,6 +16,14 @@ from models.data_models import PropertyAnalysis, QuickAnalysisResponse, ATTOMSea
 logger = logging.getLogger(__name__)
 
 
+class UserType(str, Enum):
+    """Types of users on the undervalued home website"""
+    NEW_HOMEBUYER = "new_homebuyer"
+    REALTOR = "realtor"
+    INVESTOR = "investor"
+    UNKNOWN = "unknown"
+
+
 class ChatbotStep(str, Enum):
     """Chatbot conversation flow steps"""
     GREETING = "greeting"
@@ -112,6 +120,9 @@ class ChatbotSession:
         self.retry_count = 0
         self.max_retries = 3
         
+        # User type detection for tailored responses
+        self.user_type = UserType.UNKNOWN
+        
         # Property results from deal_finder
         self.property_results: List[Dict[str, Any]] = []
     
@@ -159,52 +170,155 @@ class CustomerAgent:
         
         logger.info("Customer Agent initialized with Gemini 2.5 Flash")
     
+    def _detect_user_type(self, user_message: str, conversation_history: List[Dict] = None) -> UserType:
+        """Detect user type based on their message and conversation history"""
+        user_message_lower = user_message.lower()
+        
+        # Keywords for different user types
+        investor_keywords = [
+            'investment', 'roi', 'cash flow', 'rental', 'flip', 'brrrr', 'portfolio', 
+            'cap rate', 'investor', 'investing', 'rental property', 'appreciation',
+            'leverage', 'financing', 'debt service', 'noi', 'yield'
+        ]
+        
+        realtor_keywords = [
+            'realtor', 'agent', 'listing', 'mls', 'client', 'buyer', 'seller',
+            'commission', 'closing', 'contract', 'showing', 'market analysis',
+            'comp', 'comparable', 'licensed', 'brokerage', 'referral'
+        ]
+        
+        homebuyer_keywords = [
+            'first home', 'buying my first', 'home buyer', 'homebuyer', 
+            'moving', 'family', 'neighborhood', 'schools', 'mortgage',
+            'down payment', 'closing costs', 'home inspection', 'primary residence'
+        ]
+        
+        # Count matches for each category
+        investor_score = sum(1 for keyword in investor_keywords if keyword in user_message_lower)
+        realtor_score = sum(1 for keyword in realtor_keywords if keyword in user_message_lower)
+        homebuyer_score = sum(1 for keyword in homebuyer_keywords if keyword in user_message_lower)
+        
+        # Check conversation history for additional context
+        if conversation_history:
+            history_text = ' '.join([msg.get('content', '').lower() 
+                                   for msg in conversation_history[-3:]])  # Last 3 messages
+            
+            investor_score += sum(1 for keyword in investor_keywords if keyword in history_text)
+            realtor_score += sum(1 for keyword in realtor_keywords if keyword in history_text)
+            homebuyer_score += sum(1 for keyword in homebuyer_keywords if keyword in history_text)
+        
+        # Determine user type based on highest score
+        if investor_score > realtor_score and investor_score > homebuyer_score and investor_score > 0:
+            return UserType.INVESTOR
+        elif realtor_score > homebuyer_score and realtor_score > 0:
+            return UserType.REALTOR
+        elif homebuyer_score > 0:
+            return UserType.NEW_HOMEBUYER
+        
+        return UserType.UNKNOWN
+    
+    def _get_user_type_greeting(self, user_type: UserType) -> str:
+        """Get a customized greeting based on user type"""
+        greetings = {
+            UserType.NEW_HOMEBUYER: """
+            Welcome to our undervalued home finder! I'm here to help you discover amazing deals on homes 
+            that are priced below market value - perfect for new homebuyers looking to get more house for their money.
+            
+            I'll ask you a few questions about what you're looking for, and then show you homes where you 
+            can build instant equity and save thousands compared to typical market prices!
+            """,
+            
+            UserType.REALTOR: """
+            Welcome! I can see you're likely a real estate professional. I'm here to help you identify 
+            undervalued properties for your clients or your own investment portfolio.
+            
+            Our platform specializes in finding properties that are priced below market value, giving you 
+            competitive advantages and great opportunities to present to your clients.
+            """,
+            
+            UserType.INVESTOR: """
+            Welcome to the undervalued property investment platform! I specialize in identifying properties 
+            with strong investment potential that are currently priced below market value.
+            
+            I'll gather your investment criteria and show you properties with solid ROI potential, 
+            positive cash flow opportunities, and below-market pricing for maximum returns.
+            """,
+            
+            UserType.UNKNOWN: """
+            Welcome to our undervalued home platform! I help people find properties that are priced 
+            below market value - whether you're looking for your first home, helping clients as a realtor, 
+            or building an investment portfolio.
+            
+            I'll learn about your specific needs and show you the best undervalued opportunities available.
+            """
+        }
+        
+        return greetings.get(user_type, greetings[UserType.UNKNOWN])
+    
     def _load_explanation_templates(self) -> Dict[str, str]:
-        """Load templates for explaining analysis results to customers"""
+        """Load user-type-specific templates for the undervalued home website"""
         return {
-            "deal_score_explanation": """
-            You are a friendly real estate investment advisor. Explain this deal score to a potential investor in simple terms.
+            # Templates for NEW HOMEBUYERS
+            "new_homebuyer_deal_explanation": """
+            You are a friendly home buying advisor helping someone find their first undervalued home.
+            
+            Property Score: {score}/100
+            Value Rating: {rating}
+            
+            Explain this in encouraging, non-technical terms focusing on:
+            - Whether this is a good deal for a primary residence
+            - How much money they could save vs market rate
+            - What this means for building equity
+            - Simple next steps for a new homebuyer
+            
+            Avoid investment jargon. Focus on home ownership benefits and value.
+            """,
+            
+            # Templates for REALTORS
+            "realtor_deal_explanation": """
+            You are providing professional analysis to a licensed realtor about an undervalued property.
             
             Deal Score: {score}/100
-            Rating: {rating}
+            Market Assessment: {rating}
             
-            Explain what this score means, why it's good or bad, and what the investor should consider.
-            Keep it conversational and easy to understand.
+            Provide professional insights focusing on:
+            - Comparative market analysis implications
+            - Why this property is undervalued
+            - Key selling points to present to clients
+            - Potential concerns to disclose
+            - Strategic pricing recommendations
+            
+            Use professional real estate terminology appropriately.
             """,
             
-            "investment_strategy_explanation": """
-            You are helping an investor understand the best strategy for a property investment.
+            # Templates for INVESTORS
+            "investor_deal_explanation": """
+            You are a real estate investment analyzer providing detailed investment metrics.
             
-            Recommended Strategy: {strategy}
+            Deal Score: {score}/100
+            Investment Rating: {rating}
+            
+            Provide comprehensive investment analysis including:
+            - ROI potential and cash flow projections
+            - Investment strategy recommendations
+            - Risk assessment and mitigation strategies
+            - Market timing considerations
+            - Portfolio fit analysis
+            
+            Use investment terminology and focus on financial metrics.
+            """,
+            
+            # General undervalued home website templates
+            "undervalued_property_explanation": """
+            You are helping someone understand why a property on our undervalued home website is a good opportunity.
+            
             Property: {address}
-            Key Metrics: {metrics}
+            Undervalued by: {undervalued_amount}
+            Market Value: {market_value}
+            List Price: {list_price}
             
-            Explain this investment strategy in simple terms, including:
-            1. What this strategy means
-            2. Why it's recommended for this property
-            3. What steps the investor should take
-            4. Potential benefits and considerations
-            
-            Be encouraging but realistic.
-            """,
-            
-            "risk_explanation": """
-            You are explaining investment risks to a real estate investor in a clear, helpful way.
-            
-            Risk Assessment: {risks}
-            
-            Explain these risks in simple terms and provide practical advice on how to mitigate them.
-            Don't scare the investor, but be honest about potential challenges.
-            """,
-            
-            "market_explanation": """
-            You are explaining local real estate market conditions to an investor.
-            
-            Market Data: {market_data}
-            Location: {location}
-            
-            Explain what these market conditions mean for someone looking to invest in this area.
-            Include both opportunities and challenges in easy-to-understand language.
+            Explain the opportunity based on user type: {user_type}
+            Tailor your language and focus accordingly.
             """
         }
     
@@ -259,15 +373,30 @@ class CustomerAgent:
             return await self.handle_general_query(user_message)
     
     async def _handle_greeting_step(self, session: ChatbotSession, user_message: str) -> str:
-        """Handle initial greeting and start preference collection"""
+        """Handle initial greeting and start preference collection with user type detection"""
         
+        # Detect user type from their message
+        session.user_type = self._detect_user_type(user_message, session.conversation_history)
+        
+        # Get base greeting for their user type
+        base_greeting = self._get_user_type_greeting(session.user_type)
+        
+        # Create tailored prompt based on user type
         greeting_prompt = f"""
-        You are a friendly real estate investment assistant. The user just said: "{user_message}"
+        You are a specialized assistant for our undervalued home website. The user just said: "{user_message}"
         
-        Welcome them warmly and explain that you'll help them find undervalued investment properties by learning their preferences.
+        User Type Detected: {session.user_type.value}
         
-        Ask them about their preferred location for investing (city, state, or general area).
-        Keep it conversational and encouraging.
+        Use this base greeting as context: {base_greeting}
+        
+        Respond warmly and ask about their preferred location for finding undervalued properties.
+        Tailor your language to their user type:
+        - New Homebuyer: Focus on home ownership, equity building, getting great value
+        - Realtor: Professional tone, mention client opportunities and market advantages  
+        - Investor: Investment terminology, ROI focus, portfolio building
+        - Unknown: General approach covering all possibilities
+        
+        Keep it conversational and encouraging while being specific to our undervalued property platform.
         """
         
         try:
@@ -277,11 +406,11 @@ class CustomerAgent:
         except Exception as e:
             logger.error(f"Error in greeting step: {e}")
             session.current_step = ChatbotStep.LOCATION
-            return """Hello! I'm excited to help you find great real estate investment opportunities! 
             
-I'll ask you a few questions about your preferences, and then I'll search for undervalued properties that match what you're looking for.
+            # Fallback with user type specific greeting
+            return f"""{base_greeting}
 
-Let's start with location - where are you interested in investing? This could be a specific city, state, or general area you have in mind."""
+Let's start by finding the right location for you - where are you interested in looking for undervalued properties? This could be a specific city, state, or general area you have in mind."""
     
     async def _handle_location_step(self, session: ChatbotSession, user_message: str) -> str:
         """Handle location preference collection"""
@@ -932,22 +1061,58 @@ Would you like me to search with broader criteria, or would you prefer to modify
             return True
         return False
 
-    async def handle_general_query(self, query: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """Handle general real estate investment questions"""
+    async def handle_general_query(self, query: str, context: Optional[Dict[str, Any]] = None, user_type: UserType = None) -> str:
+        """Handle general questions with user-type-specific responses for undervalued home website"""
         
-        system_prompt = """
-        You are a knowledgeable and friendly real estate investment assistant. 
-        Help users understand real estate investing concepts, answer their questions, 
-        and provide practical guidance. Keep your responses conversational, encouraging, 
-        and easy to understand. Use examples when helpful.
-        """
+        # Detect user type if not provided
+        if not user_type:
+            user_type = self._detect_user_type(query)
+        
+        # Create user-type-specific system prompts
+        system_prompts = {
+            UserType.NEW_HOMEBUYER: """
+            You are a friendly home buying advisor for an undervalued property website. 
+            Help new homebuyers understand how to find great deals on homes priced below market value.
+            Focus on home ownership benefits, equity building, and getting more house for their money.
+            Use encouraging, non-technical language. Explain concepts like market value, equity, 
+            and why undervalued properties are great opportunities for first-time buyers.
+            """,
+            
+            UserType.REALTOR: """
+            You are a professional real estate assistant helping licensed agents understand 
+            undervalued property opportunities. Provide insights on market analysis, pricing strategies, 
+            and how to present undervalued properties to clients. Use appropriate real estate terminology 
+            and focus on professional applications, client benefits, and competitive advantages.
+            """,
+            
+            UserType.INVESTOR: """
+            You are an investment property analyst specializing in undervalued real estate opportunities.
+            Help investors understand ROI potential, cash flow analysis, and investment strategies for 
+            below-market properties. Use investment terminology and focus on financial metrics, 
+            risk assessment, and portfolio building strategies.
+            """,
+            
+            UserType.UNKNOWN: """
+            You are a versatile real estate assistant for an undervalued property website.
+            Help users understand how undervalued properties work, whether they're buying their first home,
+            working as a realtor, or building an investment portfolio. Adapt your language based on 
+            their questions and provide comprehensive, helpful guidance.
+            """
+        }
+        
+        system_prompt = system_prompts.get(user_type, system_prompts[UserType.UNKNOWN])
         
         # Add context if provided
         context_text = ""
         if context:
             context_text = f"\nContext: {json.dumps(context, indent=2)}"
         
-        full_prompt = f"{system_prompt}\n\nUser Question: {query}{context_text}"
+        full_prompt = f"""{system_prompt}
+
+Remember: You represent a platform specializing in undervalued properties - homes priced below market value.
+
+User Type: {user_type.value}
+User Question: {query}{context_text}"""
         
         try:
             response = await self.model.generate_content_async(full_prompt)
@@ -956,40 +1121,91 @@ Would you like me to search with broader criteria, or would you prefer to modify
             logger.error(f"Error handling general query: {e}")
             return "I'm sorry, I'm having trouble processing your question right now. Could you please try rephrasing it?"
     
-    async def explain_analysis_results(self, analysis_result: Dict[str, Any]) -> str:
-        """Explain property analysis results in customer-friendly terms"""
+    async def explain_analysis_results(self, analysis_result: Dict[str, Any], user_type: UserType = None) -> str:
+        """Explain property analysis results with user-type-specific language"""
+        
+        if not user_type:
+            user_type = UserType.UNKNOWN
         
         deal_score = analysis_result.get("deal_score", 0)
         investment_potential = analysis_result.get("investment_potential", "Unknown")
         address = analysis_result.get("address", "the property")
+        market_value = analysis_result.get('market_value', analysis_result.get('arv_estimate', 'N/A'))
+        list_price = analysis_result.get('list_price', 'N/A')
         
-        prompt = f"""
-        You are a real estate investment advisor explaining analysis results to a client.
+        # Calculate undervalued amount if possible
+        undervalued_amount = "N/A"
+        if isinstance(market_value, (int, float)) and isinstance(list_price, (int, float)):
+            undervalued_amount = f"${market_value - list_price:,.0f}"
         
-        Property Analysis Results:
-        - Address: {address}
-        - Deal Score: {deal_score}/100
-        - Investment Rating: {investment_potential}
-        - ARV Estimate: ${analysis_result.get('arv_estimate', 'N/A'):,}
-        - Recommended Strategy: {analysis_result.get('recommended_strategy', 'N/A')}
-        - Monthly Cash Flow: ${analysis_result.get('monthly_cash_flow', 0):,.2f}
-        - Key Insight: {analysis_result.get('key_insight', 'Analysis completed')}
+        # User-type-specific prompts
+        prompts = {
+            UserType.NEW_HOMEBUYER: f"""
+            You are explaining why this undervalued home is a great opportunity for a first-time homebuyer.
+            
+            Property: {address}
+            Value Score: {deal_score}/100
+            Market Value: ${market_value:,} (estimated)
+            List Price: ${list_price:,}
+            Potential Savings: {undervalued_amount}
+            
+            Explain in homebuyer-friendly terms:
+            1. How much money they could save vs typical market prices
+            2. How this builds instant equity in their home
+            3. Why this property offers great value
+            4. Simple next steps for a home purchase
+            
+            Focus on home ownership benefits, not investment returns.
+            """,
+            
+            UserType.REALTOR: f"""
+            You are providing professional analysis to a realtor about an undervalued property opportunity.
+            
+            Property: {address}
+            Market Analysis Score: {deal_score}/100
+            Estimated Market Value: ${market_value:,}
+            Current List Price: ${list_price:,}
+            Below-Market Opportunity: {undervalued_amount}
+            
+            Provide professional insights on:
+            1. Why this property is undervalued in the current market
+            2. Key selling points to present to clients
+            3. Comparative market analysis implications
+            4. Strategic considerations for offers and negotiations
+            
+            Use professional real estate language appropriate for an agent.
+            """,
+            
+            UserType.INVESTOR: f"""
+            You are analyzing an undervalued investment property opportunity.
+            
+            Property: {address}
+            Deal Score: {deal_score}/100
+            Investment Rating: {investment_potential}
+            Market Value: ${market_value:,}
+            Purchase Price: ${list_price:,}
+            Equity Opportunity: {undervalued_amount}
+            Monthly Cash Flow: ${analysis_result.get('monthly_cash_flow', 0):,.2f}
+            Recommended Strategy: {analysis_result.get('recommended_strategy', 'N/A')}
+            
+            Provide investment analysis covering:
+            1. ROI potential from below-market purchase
+            2. Cash flow and appreciation prospects
+            3. Risk assessment and mitigation strategies
+            4. Strategic recommendations for this investment
+            
+            Use investment terminology and focus on financial metrics.
+            """
+        }
         
-        Explain these results in simple, encouraging terms. Help the client understand:
-        1. Whether this is a good investment opportunity
-        2. What the numbers mean in practical terms
-        3. What their next steps should be
-        4. Any important considerations
-        
-        Be conversational and supportive while being realistic about the investment.
-        """
+        prompt = prompts.get(user_type, prompts[UserType.INVESTOR])  # Default to investor if unknown
         
         try:
             response = await self.model.generate_content_async(prompt)
             return response.text
         except Exception as e:
             logger.error(f"Error explaining analysis results: {e}")
-            return self._fallback_explanation(analysis_result)
+            return self._fallback_explanation(analysis_result, user_type)
     
     async def explain_deal_score(self, score: float, rating: str) -> str:
         """Explain what a deal score means"""
@@ -1105,19 +1321,44 @@ Would you like me to search with broader criteria, or would you prefer to modify
     
     # Fallback methods when AI fails
     
-    def _fallback_explanation(self, analysis_result: Dict[str, Any]) -> str:
-        """Fallback explanation when AI fails"""
+    def _fallback_explanation(self, analysis_result: Dict[str, Any], user_type: UserType = None) -> str:
+        """Fallback explanation when AI fails, tailored by user type"""
         deal_score = analysis_result.get("deal_score", 0)
         investment_potential = analysis_result.get("investment_potential", "Unknown")
         
-        if deal_score >= 80:
-            return f"This looks like an excellent investment opportunity with a deal score of {deal_score}/100! The analysis suggests this property has strong potential for good returns."
-        elif deal_score >= 60:
-            return f"This property shows good investment potential with a score of {deal_score}/100. It's worth taking a closer look and maybe getting a professional inspection."
-        elif deal_score >= 40:
-            return f"This property has moderate potential ({deal_score}/100). You might want to negotiate on price or look for ways to improve the returns."
-        else:
-            return f"This property scores {deal_score}/100, which suggests it may not be the best investment opportunity. You might want to keep looking for better deals."
+        if not user_type:
+            user_type = UserType.UNKNOWN
+        
+        # User-type-specific fallback messages
+        if user_type == UserType.NEW_HOMEBUYER:
+            if deal_score >= 80:
+                return f"This looks like an excellent undervalued home opportunity with a score of {deal_score}/100! You could save significant money compared to typical market prices and build instant equity."
+            elif deal_score >= 60:
+                return f"This property shows good value with a score of {deal_score}/100. It appears to be priced below market value, which could mean great savings for you as a homebuyer."
+            elif deal_score >= 40:
+                return f"This property has moderate value ({deal_score}/100). While it may be somewhat undervalued, you might want to negotiate on price or look for better deals."
+            else:
+                return f"This property scores {deal_score}/100, which suggests it may not offer the best value. You might want to keep looking for homes with better pricing opportunities."
+        
+        elif user_type == UserType.REALTOR:
+            if deal_score >= 80:
+                return f"This is an excellent below-market opportunity scoring {deal_score}/100. Strong potential for client satisfaction and competitive advantage in pricing."
+            elif deal_score >= 60:
+                return f"Good undervalued property opportunity ({deal_score}/100). Worth presenting to clients interested in below-market purchases."
+            elif deal_score >= 40:
+                return f"Moderate opportunity ({deal_score}/100). May require strategic pricing negotiations to maximize client benefit."
+            else:
+                return f"Limited opportunity ({deal_score}/100). May want to focus on properties with stronger below-market potential."
+        
+        else:  # INVESTOR or UNKNOWN
+            if deal_score >= 80:
+                return f"This looks like an excellent investment opportunity with a deal score of {deal_score}/100! The analysis suggests this property has strong potential for good returns."
+            elif deal_score >= 60:
+                return f"This property shows good investment potential with a score of {deal_score}/100. It's worth taking a closer look and maybe getting a professional inspection."
+            elif deal_score >= 40:
+                return f"This property has moderate potential ({deal_score}/100). You might want to negotiate on price or look for ways to improve the returns."
+            else:
+                return f"This property scores {deal_score}/100, which suggests it may not be the best investment opportunity. You might want to keep looking for better deals."
     
     def _fallback_deal_score_explanation(self, score: float, rating: str) -> str:
         """Fallback deal score explanation"""
