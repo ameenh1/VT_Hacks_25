@@ -139,11 +139,18 @@ class ChatbotSession:
         })
         self.update_activity()
     
-    def get_conversation_context(self, last_n_messages: int = 5) -> str:
+    def get_conversation_context(self, last_n_messages: int = 10) -> str:
         """Get recent conversation context for AI"""
         recent_messages = self.conversation_history[-last_n_messages:] if self.conversation_history else []
-        context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in recent_messages])
-        return context
+        if not recent_messages:
+            return "This is the start of the conversation."
+        
+        context_lines = []
+        for msg in recent_messages:
+            role_display = "User" if msg['role'] == 'user' else "Assistant"
+            context_lines.append(f"{role_display}: {msg['content']}")
+        
+        return "\n".join(context_lines)
 
 
 class CustomerAgent:
@@ -217,43 +224,16 @@ class CustomerAgent:
         
         return UserType.UNKNOWN
     
-    def _get_user_type_greeting(self, user_type: UserType) -> str:
-        """Get a customized greeting based on user type"""
-        greetings = {
-            UserType.NEW_HOMEBUYER: """
-            Welcome to our undervalued home finder! I'm here to help you discover amazing deals on homes 
-            that are priced below market value - perfect for new homebuyers looking to get more house for their money.
-            
-            I'll ask you a few questions about what you're looking for, and then show you homes where you 
-            can build instant equity and save thousands compared to typical market prices!
-            """,
-            
-            UserType.REALTOR: """
-            Welcome! I can see you're likely a real estate professional. I'm here to help you identify 
-            undervalued properties for your clients or your own investment portfolio.
-            
-            Our platform specializes in finding properties that are priced below market value, giving you 
-            competitive advantages and great opportunities to present to your clients.
-            """,
-            
-            UserType.INVESTOR: """
-            Welcome to the undervalued property investment platform! I specialize in identifying properties 
-            with strong investment potential that are currently priced below market value.
-            
-            I'll gather your investment criteria and show you properties with solid ROI potential, 
-            positive cash flow opportunities, and below-market pricing for maximum returns.
-            """,
-            
-            UserType.UNKNOWN: """
-            Welcome to our undervalued home platform! I help people find properties that are priced 
-            below market value - whether you're looking for your first home, helping clients as a realtor, 
-            or building an investment portfolio.
-            
-            I'll learn about your specific needs and show you the best undervalued opportunities available.
-            """
+    def _get_conversation_context_for_ai(self, session: ChatbotSession) -> str:
+        """Get context for more natural AI responses"""
+        user_type_context = {
+            UserType.NEW_HOMEBUYER: "They're looking for their first home or a home to live in",
+            UserType.REALTOR: "They're a real estate professional helping clients", 
+            UserType.INVESTOR: "They're looking for investment properties for financial returns",
+            UserType.UNKNOWN: "Their goals aren't clear yet"
         }
         
-        return greetings.get(user_type, greetings[UserType.UNKNOWN])
+        return user_type_context.get(session.user_type, user_type_context[UserType.UNKNOWN])
     
     def _load_explanation_templates(self) -> Dict[str, str]:
         """Load user-type-specific templates for the undervalued home website"""
@@ -348,115 +328,256 @@ class CustomerAgent:
         return response
     
     async def _process_chatbot_step(self, session: ChatbotSession, user_message: str) -> str:
-        """Process user message based on current chatbot step"""
+        """Process user message with natural conversation flow"""
         
         step = session.current_step
         
         if step == ChatbotStep.GREETING:
             return await self._handle_greeting_step(session, user_message)
-        elif step == ChatbotStep.LOCATION:
-            return await self._handle_location_step(session, user_message)
-        elif step == ChatbotStep.PROPERTY_TYPE:
-            return await self._handle_property_type_step(session, user_message)
-        elif step == ChatbotStep.PROPERTY_SPECS:
-            return await self._handle_property_specs_step(session, user_message)
-        elif step == ChatbotStep.BUDGET:
-            return await self._handle_budget_step(session, user_message)
-        elif step == ChatbotStep.INVESTMENT_STRATEGY:
-            return await self._handle_investment_strategy_step(session, user_message)
-        elif step == ChatbotStep.TIMELINE:
-            return await self._handle_timeline_step(session, user_message)
-        elif step == ChatbotStep.SUMMARY:
-            return await self._handle_summary_step(session, user_message)
         else:
-            # Fallback to general query
-            return await self.handle_general_query(user_message)
+            # Use flexible conversation handling instead of rigid steps
+            return await self._handle_natural_conversation(session, user_message)
     
     async def _handle_greeting_step(self, session: ChatbotSession, user_message: str) -> str:
-        """Handle initial greeting and start preference collection with user type detection"""
+        """Handle initial greeting and start natural conversation"""
         
         # Detect user type from their message
         session.user_type = self._detect_user_type(user_message, session.conversation_history)
         
-        # Get base greeting for their user type
-        base_greeting = self._get_user_type_greeting(session.user_type)
+        # Get full conversation history for context
+        conversation_context = session.get_conversation_context(last_n_messages=10)
         
-        # Create tailored prompt based on user type
+        # Create a natural, conversational response that builds on what they said
         greeting_prompt = f"""
-        You are a specialized assistant for our undervalued home website. The user just said: "{user_message}"
+        You are a friendly, knowledgeable real estate assistant having a conversation with someone who seems to be a {session.user_type.value.replace('_', ' ')}.
         
-        User Type Detected: {session.user_type.value}
+        CONVERSATION HISTORY:
+        {conversation_context}
         
-        Use this base greeting as context: {base_greeting}
+        CURRENT MESSAGE: "{user_message}"
         
-        Respond warmly and ask about their preferred location for finding undervalued properties.
-        Tailor your language to their user type:
-        - New Homebuyer: Focus on home ownership, equity building, getting great value
-        - Realtor: Professional tone, mention client opportunities and market advantages  
-        - Investor: Investment terminology, ROI focus, portfolio building
-        - Unknown: General approach covering all possibilities
+        REMEMBER: You are having an ongoing conversation. Reference what was said before when appropriate. 
+        Build on the conversation naturally like a real person would.
         
-        Keep it conversational and encouraging while being specific to our undervalued property platform.
+        Respond naturally to what they actually said, acknowledging the conversation flow. 
+        Don't use templates or cookie-cutter responses. Build on their specific words and situation.
+        
+        If they haven't mentioned location yet, you can naturally ask about it in context.
+        If they mentioned their situation, acknowledge it and ask a follow-up question that shows you're listening.
+        
+        Keep it human, warm, and genuinely helpful. Avoid sounding like a form or questionnaire.
         """
         
         try:
             response = await self.model.generate_content_async(greeting_prompt)
+            # Move to a more flexible conversation state instead of rigid steps
             session.current_step = ChatbotStep.LOCATION
             return response.text
         except Exception as e:
             logger.error(f"Error in greeting step: {e}")
             session.current_step = ChatbotStep.LOCATION
-            
-            # Fallback with user type specific greeting
-            return f"""{base_greeting}
-
-Let's start by finding the right location for you - where are you interested in looking for undervalued properties? This could be a specific city, state, or general area you have in mind."""
+            return "Hi there! I'd love to help you find some great property opportunities. What kind of situation are you in right now?"
     
     async def _handle_location_step(self, session: ChatbotSession, user_message: str) -> str:
-        """Handle location preference collection"""
+        """Handle conversation naturally, extracting info as it comes up"""
         
-        location_prompt = f"""
-        The user is specifying their location preferences for real estate investment: "{user_message}"
+        # Extract any location info mentioned
+        user_message_lower = user_message.lower()
+        if any(word in user_message_lower for word in ['virginia', 'va', 'richmond', 'norfolk', 'virginia beach']):
+            session.user_preferences.location_preferences['states'].append('VA')
         
-        Extract location information (cities, states, areas) and respond encouragingly.
-        Then ask about property types they're interested in (single family homes, condos, townhouses, multi-family properties).
+        if 'richmond' in user_message_lower:
+            session.user_preferences.location_preferences['cities'].append('Richmond')
+        elif 'norfolk' in user_message_lower:
+            session.user_preferences.location_preferences['cities'].append('Norfolk')
         
-        Be conversational and helpful. If the location is vague, ask for clarification.
+        # Get full conversation history for context
+        conversation_context = session.get_conversation_context(last_n_messages=10)
+        
+        conversation_prompt = f"""
+        You are having a natural conversation about real estate with someone who is a {session.user_type.value.replace('_', ' ')}.
+        
+        FULL CONVERSATION HISTORY:
+        {conversation_context}
+        
+        CURRENT MESSAGE: "{user_message}"
+        
+        REMEMBER: This is an ongoing conversation. Reference previous messages and build on what was discussed.
+        Show that you remember what they told you before.
+        
+        Respond naturally to what they said. If they mentioned a location, acknowledge it specifically.
+        If they shared details about their situation, ask a thoughtful follow-up question.
+        
+        Don't follow a script - have a real conversation that flows naturally from what came before.
+        Ask questions that show you're genuinely interested in helping them with their specific situation.
+        
+        Avoid bullet points, lists, or formal structures unless they specifically ask for them.
         """
         
         try:
-            # Extract location info using AI
-            response = await self.model.generate_content_async(location_prompt)
+            response = await self.model.generate_content_async(conversation_prompt)
             
-            # Parse location information (simplified for demo)
-            user_message_lower = user_message.lower()
-            if any(word in user_message_lower for word in ['virginia', 'va', 'richmond', 'norfolk', 'virginia beach']):
-                session.user_preferences.location_preferences['states'].append('VA')
-            
-            if 'richmond' in user_message_lower:
-                session.user_preferences.location_preferences['cities'].append('Richmond')
-            elif 'norfolk' in user_message_lower:
-                session.user_preferences.location_preferences['cities'].append('Norfolk')
-            
-            session.user_preferences.completed_sections.add('location')
-            session.current_step = ChatbotStep.PROPERTY_TYPE
+            # Intelligently decide next step based on what we've learned
+            if any(session.user_preferences.location_preferences['cities']) or any(session.user_preferences.location_preferences['states']):
+                session.user_preferences.completed_sections.add('location')
+                session.current_step = ChatbotStep.PROPERTY_TYPE
             
             return response.text
             
         except Exception as e:
-            logger.error(f"Error in location step: {e}")
-            session.current_step = ChatbotStep.PROPERTY_TYPE
-            return f"""Got it! I'll focus on the {user_message} area for your property search.
-            
-Now, what types of properties interest you? I can help you find:
-• Single family homes
-• Condos/townhouses  
-• Small multi-family properties (2-4 units)
-• Commercial properties
-
-What type appeals to you most, or would you like me to search across multiple types?"""
+            logger.error(f"Error in conversation: {e}")
+            return "Tell me more about what you're looking for. I'm here to help!"
     
-    async def _handle_property_type_step(self, session: ChatbotSession, user_message: str) -> str:
+    async def _handle_natural_conversation(self, session: ChatbotSession, user_message: str) -> str:
+        """Handle natural, flowing conversation instead of rigid steps"""
+        
+        # Extract any useful information from what they said
+        self._extract_preferences_naturally(session, user_message)
+        
+        # Build context about what we know so far
+        known_info = self._summarize_known_preferences(session)
+        
+        # Check if we have enough to start a search
+        if self._ready_for_search(session):
+            return await self._handle_summary_step(session, user_message)
+        
+        # Get full conversation history for context - THIS IS KEY!
+        conversation_context = session.get_conversation_context(last_n_messages=15)
+        
+        conversation_prompt = f"""
+        You are having a natural conversation about real estate with someone who is a {session.user_type.value.replace('_', ' ')}.
+        
+        FULL CONVERSATION HISTORY:
+        {conversation_context}
+        
+        CURRENT MESSAGE: "{user_message}"
+        
+        WHAT YOU KNOW SO FAR: {known_info}
+        
+        CRITICAL: This is an ongoing conversation. You MUST remember and reference what was discussed before.
+        Build on previous messages naturally. Show that you remember their preferences, situation, and concerns.
+        
+        Continue the conversation naturally based on the FULL HISTORY above. 
+        Ask follow-up questions that feel organic to the conversation flow.
+        Show that you're listening to what they're saying and remember previous details.
+        
+        If they seem ready to see some properties, offer to search for them.
+        If they're still exploring their options, keep the conversation going naturally.
+        
+        Be human, warm, and genuinely helpful. Reference specific things they mentioned earlier to show you remember.
+        """
+        
+        try:
+            response = await self.model.generate_content_async(conversation_prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Error in natural conversation: {e}")
+            return "That's interesting! Tell me more about what you're thinking."
+    
+    def _extract_preferences_naturally(self, session: ChatbotSession, user_message: str):
+        """Extract preferences from natural conversation without being obvious about it"""
+        user_message_lower = user_message.lower()
+        
+        # Location extraction
+        cities = ['richmond', 'norfolk', 'virginia beach', 'charlotte', 'raleigh', 'atlanta', 'nashville']
+        states = ['virginia', 'va', 'north carolina', 'nc', 'georgia', 'ga', 'tennessee', 'tn']
+        
+        for city in cities:
+            if city in user_message_lower:
+                if city not in session.user_preferences.location_preferences['cities']:
+                    session.user_preferences.location_preferences['cities'].append(city.title())
+                    session.user_preferences.completed_sections.add('location')
+        
+        for state in states:
+            if state in user_message_lower:
+                state_code = {'virginia': 'VA', 'va': 'VA', 'north carolina': 'NC', 'nc': 'NC', 
+                            'georgia': 'GA', 'ga': 'GA', 'tennessee': 'TN', 'tn': 'TN'}
+                if state in state_code and state_code[state] not in session.user_preferences.location_preferences['states']:
+                    session.user_preferences.location_preferences['states'].append(state_code[state])
+                    session.user_preferences.completed_sections.add('location')
+        
+        # Property type extraction
+        if any(word in user_message_lower for word in ['single family', 'house', 'home']):
+            if PropertyType.SINGLE_FAMILY not in session.user_preferences.property_preferences['property_types']:
+                session.user_preferences.property_preferences['property_types'].append(PropertyType.SINGLE_FAMILY)
+                session.user_preferences.completed_sections.add('property_type')
+        
+        if any(word in user_message_lower for word in ['condo', 'townhouse']):
+            for pt in [PropertyType.CONDO, PropertyType.TOWNHOUSE]:
+                if pt not in session.user_preferences.property_preferences['property_types']:
+                    session.user_preferences.property_preferences['property_types'].append(pt)
+                    session.user_preferences.completed_sections.add('property_type')
+        
+        # Budget extraction
+        import re
+        price_matches = re.findall(r'\$?([\\d,]+)k?', user_message_lower)
+        for price_str in price_matches:
+            try:
+                price = int(price_str.replace(',', ''))
+                if price > 10:  # Assume it's a reasonable price
+                    if 'k' in user_message_lower or price < 1000:
+                        price *= 1000 if price < 1000 else 1
+                    
+                    if any(word in user_message_lower for word in ['budget', 'max', 'under', 'below']):
+                        session.user_preferences.financial_preferences['max_price'] = price
+                        session.user_preferences.completed_sections.add('budget')
+            except:
+                pass
+        
+        # Strategy extraction
+        if any(word in user_message_lower for word in ['rental', 'rent out', 'cash flow', 'passive income']):
+            if InvestmentStrategy.BUY_AND_HOLD not in session.user_preferences.financial_preferences['investment_strategies']:
+                session.user_preferences.financial_preferences['investment_strategies'].append(InvestmentStrategy.BUY_AND_HOLD)
+                session.user_preferences.completed_sections.add('investment_strategy')
+        
+        if any(word in user_message_lower for word in ['flip', 'renovate', 'fix up']):
+            if InvestmentStrategy.FLIP not in session.user_preferences.financial_preferences['investment_strategies']:
+                session.user_preferences.financial_preferences['investment_strategies'].append(InvestmentStrategy.FLIP)
+                session.user_preferences.completed_sections.add('investment_strategy')
+    
+    def _summarize_known_preferences(self, session: ChatbotSession) -> str:
+        """Create a natural summary of what we know so far"""
+        info_parts = []
+        
+        if session.user_preferences.location_preferences['cities']:
+            info_parts.append(f"Looking in {', '.join(session.user_preferences.location_preferences['cities'])}")
+        elif session.user_preferences.location_preferences['states']:
+            info_parts.append(f"Interested in {', '.join(session.user_preferences.location_preferences['states'])}")
+        
+        if session.user_preferences.property_preferences['property_types']:
+            types = [pt.value.replace('_', ' ').title() for pt in session.user_preferences.property_preferences['property_types']]
+            info_parts.append(f"Property types: {', '.join(types)}")
+        
+        if session.user_preferences.financial_preferences['max_price']:
+            info_parts.append(f"Budget: up to ${session.user_preferences.financial_preferences['max_price']:,}")
+        
+        if session.user_preferences.financial_preferences['investment_strategies']:
+            strategies = [s.value.replace('_', ' ').title() for s in session.user_preferences.financial_preferences['investment_strategies']]
+            info_parts.append(f"Strategy: {', '.join(strategies)}")
+        
+        return '; '.join(info_parts) if info_parts else "Still getting to know their preferences"
+    
+    def _ready_for_search(self, session: ChatbotSession) -> bool:
+        """Check if we have enough info to start a meaningful search"""
+        has_location = (session.user_preferences.location_preferences['cities'] or 
+                       session.user_preferences.location_preferences['states'])
+        has_some_criteria = len(session.user_preferences.completed_sections) >= 2
+        
+        return has_location and has_some_criteria
+    
+    def _get_conversation_context_for_ai(self, session: ChatbotSession) -> str:
+        """Get context for more natural AI responses"""
+        user_type_context = {
+            UserType.NEW_HOMEBUYER: "They're looking for their first home or a home to live in",
+            UserType.REALTOR: "They're a real estate professional helping clients", 
+            UserType.INVESTOR: "They're looking for investment properties for financial returns",
+            UserType.UNKNOWN: "Their goals aren't clear yet"
+        }
+        
+        return user_type_context.get(session.user_type, user_type_context[UserType.UNKNOWN])
+
+    # Keep the summary step handler since we still need it for search handoff
+    async def _handle_summary_step(self, session: ChatbotSession, user_message: str) -> str:
         """Handle property type preferences"""
         
         # Parse property types (simplified)
@@ -698,14 +819,31 @@ This helps me prioritize the search results for you!"""
         preferences.is_complete = True
         session.current_step = ChatbotStep.HANDOFF
         
+        # Get conversation context for a natural summary
+        conversation_context = session.get_conversation_context(last_n_messages=20)
+        
         try:
             summary_prompt = f"""
-            Create a friendly summary of the user's preferences and let them know you're now searching for properties.
+            You are wrapping up a conversation about real estate preferences and preparing to search for properties.
             
-            Their preferences:
+            FULL CONVERSATION HISTORY:
+            {conversation_context}
+            
+            CURRENT MESSAGE: "{user_message}"
+            
+            COLLECTED PREFERENCES:
             {summary_text}
             
-            Be enthusiastic and let them know you're handing this off to find undervalued properties that match their criteria.
+            REMEMBER: Reference the conversation naturally. Show that you remember their specific needs and situation.
+            
+            Create a friendly, personalized summary that:
+            1. Acknowledges their current message
+            2. References key things they told you during the conversation  
+            3. Summarizes their preferences in a natural, conversational way
+            4. Shows enthusiasm about finding properties for their specific situation
+            5. Lets them know you're now searching for matching properties
+            
+            Be enthusiastic and personal - reference specific details they shared to show you were listening.
             """
             
             ai_response = await self.model.generate_content_async(summary_prompt)
@@ -839,11 +977,17 @@ Would you like me to search with broader criteria, or would you prefer to modify
         # Take top 5 properties
         top_properties = sorted_properties[:5]
         
+        # Get conversation context to personalize the results
+        conversation_context = session.get_conversation_context(last_n_messages=15)
+        
         # Create summary prompt for AI
         summary_prompt = f"""
-        Create an enthusiastic summary of the best undervalued investment properties found for the user.
+        Create an enthusiastic, personalized summary of the best undervalued investment properties found for the user.
         
-        User's preferences:
+        CONVERSATION HISTORY (remember their specific situation and needs):
+        {conversation_context}
+        
+        User's preferences collected:
         - Location: {', '.join(session.user_preferences.location_preferences.get('cities', []) or session.user_preferences.location_preferences.get('states', []))}
         - Property types: {[str(pt) for pt in session.user_preferences.property_preferences.get('property_types', [])]}
         - Max budget: ${session.user_preferences.financial_preferences.get('max_price', 'Not specified')}
@@ -852,14 +996,17 @@ Would you like me to search with broader criteria, or would you prefer to modify
         Top properties found:
         {json.dumps(top_properties, indent=2)}
         
+        REMEMBER: Reference the conversation naturally. Show that you remember their specific situation and why they're looking for properties.
+        
         Create a summary that:
-        1. Celebrates finding great deals
+        1. Celebrates finding great deals based on their SPECIFIC situation mentioned in the conversation
         2. Highlights the top 3-5 properties with key details
-        3. Explains why each is a good investment
-        4. Mentions deal scores and cash flow potential
-        5. Encourages next steps (viewing, making offers, etc.)
+        3. Explains why each matches their particular needs and situation
+        4. Mentions deal scores and cash flow potential relevant to their strategy
+        5. Encourages next steps (viewing, making offers, etc.) that make sense for their situation
         
         Use bullet points and clear formatting. Be enthusiastic but professional.
+        Reference specific things they mentioned earlier to show you remember their conversation.
         """
         
         try:
@@ -1061,65 +1208,51 @@ Would you like me to search with broader criteria, or would you prefer to modify
             return True
         return False
 
-    async def handle_general_query(self, query: str, context: Optional[Dict[str, Any]] = None, user_type: UserType = None) -> str:
-        """Handle general questions with user-type-specific responses for undervalued home website"""
+    async def handle_general_query(self, query: str, context: Optional[Dict[str, Any]] = None, user_type: UserType = None, session: Optional[ChatbotSession] = None) -> str:
+        """Handle general questions naturally and conversationally"""
         
         # Detect user type if not provided
         if not user_type:
             user_type = self._detect_user_type(query)
         
-        # Create user-type-specific system prompts
-        system_prompts = {
-            UserType.NEW_HOMEBUYER: """
-            You are a friendly home buying advisor for an undervalued property website. 
-            Help new homebuyers understand how to find great deals on homes priced below market value.
-            Focus on home ownership benefits, equity building, and getting more house for their money.
-            Use encouraging, non-technical language. Explain concepts like market value, equity, 
-            and why undervalued properties are great opportunities for first-time buyers.
-            """,
-            
-            UserType.REALTOR: """
-            You are a professional real estate assistant helping licensed agents understand 
-            undervalued property opportunities. Provide insights on market analysis, pricing strategies, 
-            and how to present undervalued properties to clients. Use appropriate real estate terminology 
-            and focus on professional applications, client benefits, and competitive advantages.
-            """,
-            
-            UserType.INVESTOR: """
-            You are an investment property analyst specializing in undervalued real estate opportunities.
-            Help investors understand ROI potential, cash flow analysis, and investment strategies for 
-            below-market properties. Use investment terminology and focus on financial metrics, 
-            risk assessment, and portfolio building strategies.
-            """,
-            
-            UserType.UNKNOWN: """
-            You are a versatile real estate assistant for an undervalued property website.
-            Help users understand how undervalued properties work, whether they're buying their first home,
-            working as a realtor, or building an investment portfolio. Adapt your language based on 
-            their questions and provide comprehensive, helpful guidance.
-            """
-        }
+        # Create a session-like object for context method if no session provided
+        if not session:
+            session = type('obj', (object,), {'user_type': user_type})()
         
-        system_prompt = system_prompts.get(user_type, system_prompts[UserType.UNKNOWN])
+        user_context = self._get_conversation_context_for_ai(session)
+        
+        # Include conversation history if we have a real session
+        conversation_context = ""
+        if hasattr(session, 'get_conversation_context'):
+            conversation_context = f"\nCONVERSATION HISTORY:\n{session.get_conversation_context(last_n_messages=10)}\n"
         
         # Add context if provided
         context_text = ""
         if context:
-            context_text = f"\nContext: {json.dumps(context, indent=2)}"
+            context_text = f"\nAdditional context: {json.dumps(context, indent=2)}"
         
-        full_prompt = f"""{system_prompt}
-
-Remember: You represent a platform specializing in undervalued properties - homes priced below market value.
-
-User Type: {user_type.value}
-User Question: {query}{context_text}"""
+        full_prompt = f"""
+        You're a knowledgeable, friendly real estate assistant having a natural conversation.
+        
+        The person you're talking to: {user_context}
+        {conversation_context}
+        CURRENT QUESTION: "{query}"
+        
+        REMEMBER: If there's conversation history above, reference it naturally and build on what was discussed.
+        Show that you remember previous parts of the conversation.
+        
+        Respond naturally and helpfully. You specialize in undervalued properties - homes priced below market value.
+        Be conversational, not formal. Answer their actual question directly.
+        
+        {context_text}
+        """
         
         try:
             response = await self.model.generate_content_async(full_prompt)
             return response.text
         except Exception as e:
             logger.error(f"Error handling general query: {e}")
-            return "I'm sorry, I'm having trouble processing your question right now. Could you please try rephrasing it?"
+            return "I'm not sure I understood that completely. Could you tell me more about what you're looking for?"
     
     async def explain_analysis_results(self, analysis_result: Dict[str, Any], user_type: UserType = None) -> str:
         """Explain property analysis results with user-type-specific language"""
