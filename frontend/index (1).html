@@ -11,6 +11,12 @@
     <link rel="preconnect" href="https://gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
     
+    <!-- Preload key images for better performance -->
+    <link rel="preload" href="hero-house.jpg" as="image">
+    <link rel="preload" href="houses-grid.jpg" as="image">
+    <link rel="preload" href="investment-house.jpg" as="image">
+    <link rel="preload" href="openart-image_aHY4Z7W5_1758939978488_raw.jpg" as="image">
+    
     <!-- Styles -->
     <link rel="stylesheet" href="styles (1).css">
     
@@ -331,7 +337,7 @@
             <section class="cta-section">
                 <div class="cta-background"></div>
                 <div class="cta-overlay-image">
-                    <img src="src/assets/investment-house.jpg" alt="Investment Property">
+                    <img src="investment-house.jpg" alt="Investment Property">
                 </div>
                 <div class="cta-overlay"></div>
                 
@@ -526,9 +532,380 @@
         </div>
         
         <div id="analyzer-page" class="page">
-            <div style="padding: 100px 20px; text-align: center;">
-                <h1>Deal Analyzer - Coming Soon</h1>
-                <p>Property analysis tools will be available here.</p>
+            <!-- Deal Analyzer Header -->
+            <div class="analyzer-header">
+                <div class="analyzer-header-container">
+                    <div class="analyzer-title-section">
+                        <h1 class="analyzer-title">
+                            <i data-lucide="calculator"></i>
+                            Deal Analyzer
+                        </h1>
+                        <p class="analyzer-subtitle">AI-powered property analysis tailored to your investment strategy</p>
+                    </div>
+                    <div class="analyzer-actions">
+                        <button class="btn btn-outline analyzer-refresh" onclick="refreshAnalyzerData()">
+                            <i data-lucide="refresh-cw"></i>
+                            Refresh Analysis
+                        </button>
+                        <button class="btn btn-primary analyzer-export" onclick="exportAnalyzerResults()">
+                            <i data-lucide="download"></i>
+                            Export Results
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deal Analyzer Content -->
+            <div class="analyzer-container">
+                <!-- Preferences Tab Section -->
+                <div class="analyzer-preferences-section">
+                    <div class="preferences-tab-header">
+                        <div class="preferences-tab active" data-tab="preferences">
+                            <i data-lucide="settings"></i>
+                            <span>Your Preferences</span>
+                        </div>
+                        <div class="preferences-status">
+                            <div class="status-indicator active"></div>
+                            <span>Analysis Updated • 2 mins ago</span>
+                        </div>
+                    </div>
+
+                    <div class="preferences-content active" id="preferences-tab-content">
+                        <div class="preferences-grid">
+                            <div class="preference-card">
+                                <h4><i data-lucide="target"></i>Investment Strategy</h4>
+                                <div class="preference-value">Buy & Hold</div>
+                                <div class="preference-details">Long-term rental income focus</div>
+                            </div>
+                            
+                            <div class="preference-card">
+                                <h4><i data-lucide="dollar-sign"></i>Budget Range</h4>
+                                <div class="preference-value">$200K - $500K</div>
+                                <div class="preference-details">Including renovation costs</div>
+                            </div>
+                            
+                            <div class="preference-card">
+                                <h4><i data-lucide="map-pin"></i>Target Markets</h4>
+                                <div class="preference-value">Austin, Dallas, Houston</div>
+                                <div class="preference-details">Texas metro areas</div>
+                            </div>
+                            
+                            <div class="preference-card">
+                                <h4><i data-lucide="trending-up"></i>Min ROI Target</h4>
+                                <div class="preference-value">12% Cash-on-Cash</div>
+                                <div class="preference-details">Annual return expectation</div>
+                            </div>
+                            
+                            <div class="preference-card">
+                                <h4><i data-lucide="shield"></i>Risk Tolerance</h4>
+                                <div class="preference-value">Moderate</div>
+                                <div class="preference-details">Balanced risk/reward approach</div>
+                            </div>
+                            
+                            <div class="preference-card">
+                                <h4><i data-lucide="home"></i>Property Types</h4>
+                                <div class="preference-value">SFR, Townhouses</div>
+                                <div class="preference-details">Single family focused</div>
+                            </div>
+                        </div>
+
+                        <div class="preferences-actions">
+                            <button class="btn btn-outline" onclick="editPreferences()">
+                                <i data-lucide="edit-3"></i>
+                                Edit Preferences
+                            </button>
+                            <button class="btn btn-primary" onclick="runNewAnalysis()">
+                                <i data-lucide="play"></i>
+                                Run New Analysis
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Results Section -->
+                <div class="analyzer-results-section">
+                    <div class="results-header">
+                        <h2 class="results-title">
+                            <i data-lucide="search"></i>
+                            Deal Analysis Results
+                        </h2>
+                        <div class="results-summary">
+                            <div class="summary-item">
+                                <span class="summary-number">23</span>
+                                <span class="summary-label">Properties Analyzed</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-number">7</span>
+                                <span class="summary-label">Strong Deals Found</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-number">3</span>
+                                <span class="summary-label">Immediate Opportunities</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Property Findings -->
+                    <div class="property-findings">
+                        <!-- Loading State (will be hidden when data loads) -->
+                        <div class="analyzer-loading" id="analyzer-loading">
+                            <div class="loading-spinner"></div>
+                            <p>Analyzing properties with your preferences...</p>
+                        </div>
+
+                        <!-- Property Results (will be populated by backend) -->
+                        <div class="property-results" id="property-results">
+                            <!-- Sample Property Card 1 -->
+                            <div class="analyzed-property-card excellent-deal">
+                                <div class="property-card-header">
+                                    <div class="property-badge excellent">Excellent Deal</div>
+                                    <div class="property-score">92/100</div>
+                                </div>
+                                
+                                <div class="property-card-content">
+                                    <div class="property-info">
+                                        <div class="property-image">
+                                            <img src="hero-house.jpg" alt="Investment Property">
+                                            <div class="property-overlay">
+                                                <button class="view-details-btn" onclick="viewPropertyDetails('prop_001')">
+                                                    <i data-lucide="eye"></i>
+                                                    View Details
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="property-details">
+                                            <h3 class="property-address">1847 Riverside Drive</h3>
+                                            <p class="property-location">Austin, TX 78701</p>
+                                            
+                                            <div class="property-specs">
+                                                <span><i data-lucide="bed"></i> 3 beds</span>
+                                                <span><i data-lucide="bath"></i> 2 baths</span>
+                                                <span><i data-lucide="square"></i> 1,850 sq ft</span>
+                                                <span><i data-lucide="calendar"></i> Built 2018</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="property-analysis">
+                                        <div class="analysis-row">
+                                            <div class="analysis-item">
+                                                <label>List Price</label>
+                                                <value>$485,000</value>
+                                            </div>
+                                            <div class="analysis-item positive">
+                                                <label>Est. Value</label>
+                                                <value>$525,000</value>
+                                            </div>
+                                            <div class="analysis-item positive">
+                                                <label>Equity Potential</label>
+                                                <value>+$40,000</value>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="analysis-row">
+                                            <div class="analysis-item">
+                                                <label>Monthly Rent Est.</label>
+                                                <value>$2,800</value>
+                                            </div>
+                                            <div class="analysis-item positive">
+                                                <label>Cash-on-Cash ROI</label>
+                                                <value>14.2%</value>
+                                            </div>
+                                            <div class="analysis-item">
+                                                <label>Cap Rate</label>
+                                                <value>6.8%</value>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="property-card-footer">
+                                    <div class="ai-insight">
+                                        <i data-lucide="brain"></i>
+                                        <span>"Great neighborhood with strong rental demand. Property priced 7.6% below estimated value."</span>
+                                    </div>
+                                    <div class="property-actions">
+                                        <button class="btn btn-outline btn-sm" onclick="saveProperty('prop_001')">
+                                            <i data-lucide="bookmark"></i>
+                                            Save
+                                        </button>
+                                        <button class="btn btn-primary btn-sm" onclick="contactAgent('prop_001')">
+                                            <i data-lucide="phone"></i>
+                                            Contact Agent
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sample Property Card 2 -->
+                            <div class="analyzed-property-card good-deal">
+                                <div class="property-card-header">
+                                    <div class="property-badge good">Good Deal</div>
+                                    <div class="property-score">78/100</div>
+                                </div>
+                                
+                                <div class="property-card-content">
+                                    <div class="property-info">
+                                        <div class="property-image">
+                                            <img src="houses-grid.jpg" alt="Investment Property">
+                                            <div class="property-overlay">
+                                                <button class="view-details-btn" onclick="viewPropertyDetails('prop_002')">
+                                                    <i data-lucide="eye"></i>
+                                                    View Details
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="property-details">
+                                            <h3 class="property-address">2156 Oak Valley Lane</h3>
+                                            <p class="property-location">Dallas, TX 75201</p>
+                                            
+                                            <div class="property-specs">
+                                                <span><i data-lucide="bed"></i> 4 beds</span>
+                                                <span><i data-lucide="bath"></i> 3 baths</span>
+                                                <span><i data-lucide="square"></i> 2,200 sq ft</span>
+                                                <span><i data-lucide="calendar"></i> Built 2015</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="property-analysis">
+                                        <div class="analysis-row">
+                                            <div class="analysis-item">
+                                                <label>List Price</label>
+                                                <value>$425,000</value>
+                                            </div>
+                                            <div class="analysis-item positive">
+                                                <label>Est. Value</label>
+                                                <value>$445,000</value>
+                                            </div>
+                                            <div class="analysis-item positive">
+                                                <label>Equity Potential</label>
+                                                <value>+$20,000</value>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="analysis-row">
+                                            <div class="analysis-item">
+                                                <label>Monthly Rent Est.</label>
+                                                <value>$2,450</value>
+                                            </div>
+                                            <div class="analysis-item positive">
+                                                <label>Cash-on-Cash ROI</label>
+                                                <value>12.8%</value>
+                                            </div>
+                                            <div class="analysis-item">
+                                                <label>Cap Rate</label>
+                                                <value>6.2%</value>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="property-card-footer">
+                                    <div class="ai-insight">
+                                        <i data-lucide="brain"></i>
+                                        <span>"Solid investment in growing area. Consider minor updates to maximize rental income."</span>
+                                    </div>
+                                    <div class="property-actions">
+                                        <button class="btn btn-outline btn-sm" onclick="saveProperty('prop_002')">
+                                            <i data-lucide="bookmark"></i>
+                                            Save
+                                        </button>
+                                        <button class="btn btn-primary btn-sm" onclick="contactAgent('prop_002')">
+                                            <i data-lucide="phone"></i>
+                                            Contact Agent
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sample Property Card 3 -->
+                            <div class="analyzed-property-card average-deal">
+                                <div class="property-card-header">
+                                    <div class="property-badge average">Fair Deal</div>
+                                    <div class="property-score">65/100</div>
+                                </div>
+                                
+                                <div class="property-card-content">
+                                    <div class="property-info">
+                                        <div class="property-image">
+                                            <img src="investment-house.jpg" alt="Investment Property">
+                                            <div class="property-overlay">
+                                                <button class="view-details-btn" onclick="viewPropertyDetails('prop_003')">
+                                                    <i data-lucide="eye"></i>
+                                                    View Details
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="property-details">
+                                            <h3 class="property-address">892 Sunset Boulevard</h3>
+                                            <p class="property-location">Houston, TX 77001</p>
+                                            
+                                            <div class="property-specs">
+                                                <span><i data-lucide="bed"></i> 2 beds</span>
+                                                <span><i data-lucide="bath"></i> 2 baths</span>
+                                                <span><i data-lucide="square"></i> 1,200 sq ft</span>
+                                                <span><i data-lucide="calendar"></i> Built 2010</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="property-analysis">
+                                        <div class="analysis-row">
+                                            <div class="analysis-item">
+                                                <label>List Price</label>
+                                                <value>$285,000</value>
+                                            </div>
+                                            <div class="analysis-item neutral">
+                                                <label>Est. Value</label>
+                                                <value>$290,000</value>
+                                            </div>
+                                            <div class="analysis-item neutral">
+                                                <label>Equity Potential</label>
+                                                <value>+$5,000</value>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="analysis-row">
+                                            <div class="analysis-item">
+                                                <label>Monthly Rent Est.</label>
+                                                <value>$1,850</value>
+                                            </div>
+                                            <div class="analysis-item neutral">
+                                                <label>Cash-on-Cash ROI</label>
+                                                <value>10.1%</value>
+                                            </div>
+                                            <div class="analysis-item">
+                                                <label>Cap Rate</label>
+                                                <value>5.8%</value>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="property-card-footer">
+                                    <div class="ai-insight">
+                                        <i data-lucide="brain"></i>
+                                        <span>"Market-rate property with steady returns. Consider for portfolio diversification."</span>
+                                    </div>
+                                    <div class="property-actions">
+                                        <button class="btn btn-outline btn-sm" onclick="saveProperty('prop_003')">
+                                            <i data-lucide="bookmark"></i>
+                                            Save
+                                        </button>
+                                        <button class="btn btn-primary btn-sm" onclick="contactAgent('prop_003')">
+                                            <i data-lucide="phone"></i>
+                                            Contact Agent
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -540,10 +917,213 @@
         </div>
         
         <div id="pricing-page" class="page">
-            <div style="padding: 100px 20px; text-align: center;">
-                <h1>Pricing - Coming Soon</h1>
-                <p>Pricing information will be available here.</p>
-            </div>
+            <!-- Pricing Hero Section -->
+            <section class="pricing-hero">
+                <div class="pricing-hero-container">
+                    <div class="pricing-hero-content animate-fade-in-up">
+                        <h1 class="pricing-hero-title">
+                            Simple, transparent
+                            <span class="text-gradient">pricing</span>
+                        </h1>
+                        <p class="pricing-hero-description">
+                            Choose the perfect plan for your real estate investment journey. 
+                            No hidden fees, cancel anytime.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Pricing Plans Section -->
+            <section class="pricing-section">
+                <div class="pricing-container">
+                    <div class="pricing-grid">
+                        <!-- Personal Plan -->
+                        <div class="pricing-card personal-plan animate-fade-in">
+                            <div class="pricing-card-header">
+                                <div class="plan-badge">Most Popular</div>
+                                <h3 class="plan-name">Personal</h3>
+                                <p class="plan-description">Perfect for individual investors and house flippers</p>
+                            </div>
+                            
+                            <div class="pricing-card-price">
+                                <div class="price-amount">
+                                    <span class="currency">$</span>
+                                    <span class="amount">999</span>
+                                    <span class="period">/month</span>
+                                </div>
+                                <p class="price-description">Billed monthly, cancel anytime</p>
+                            </div>
+
+                            <div class="pricing-card-features">
+                                <h4>Everything you need to find great deals:</h4>
+                                <ul class="features-list">
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Unlimited property analysis</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>AI-powered deal scoring</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Real-time market data</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Comparable sales analysis</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Investment strategy recommendations</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Risk assessment reports</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Cash flow projections</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Email deal alerts</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Mobile app access</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Up to 500 saved properties</span>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <button class="pricing-cta btn-primary">
+                                <i data-lucide="zap"></i>
+                                Start Free Trial
+                            </button>
+                        </div>
+
+                        <!-- Enterprise Plan -->
+                        <div class="pricing-card enterprise-plan animate-fade-in">
+                            <div class="pricing-card-header">
+                                <div class="plan-badge enterprise-badge">Enterprise</div>
+                                <h3 class="plan-name">Enterprise</h3>
+                                <p class="plan-description">For teams, agencies, and serious portfolio builders</p>
+                            </div>
+                            
+                            <div class="pricing-card-price">
+                                <div class="price-amount">
+                                    <span class="currency">$</span>
+                                    <span class="amount">9,999</span>
+                                    <span class="period">/month</span>
+                                </div>
+                                <p class="price-description">Billed annually, dedicated support</p>
+                            </div>
+
+                            <div class="pricing-card-features">
+                                <h4>Everything in Personal, plus:</h4>
+                                <ul class="features-list">
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Unlimited team members</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Advanced portfolio analytics</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Custom market reports</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>API access for integrations</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Bulk property analysis</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>White-label reporting</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Priority deal notifications</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Dedicated account manager</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Custom integrations</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Unlimited saved properties</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>Advanced data exports</span>
+                                    </li>
+                                    <li>
+                                        <i data-lucide="check" class="feature-check"></i>
+                                        <span>24/7 premium support</span>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <button class="pricing-cta btn-enterprise">
+                                <i data-lucide="building-2"></i>
+                                Contact Sales
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pricing FAQ Section -->
+                    <div class="pricing-faq">
+                        <h3 class="faq-title">Frequently asked questions</h3>
+                        <div class="faq-grid">
+                            <div class="faq-item">
+                                <h4>Can I cancel anytime?</h4>
+                                <p>Yes! You can cancel your subscription at any time. Your access will continue until the end of your billing period.</p>
+                            </div>
+                            <div class="faq-item">
+                                <h4>Is there a free trial?</h4>
+                                <p>We offer a 14-day free trial for the Personal plan. No credit card required to start.</p>
+                            </div>
+                            <div class="faq-item">
+                                <h4>What payment methods do you accept?</h4>
+                                <p>We accept all major credit cards, PayPal, and wire transfers for Enterprise plans.</p>
+                            </div>
+                            <div class="faq-item">
+                                <h4>Do you offer discounts for annual plans?</h4>
+                                <p>Yes! Save 20% when you pay annually. Enterprise plans include annual billing by default.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CTA Section -->
+                    <div class="pricing-cta-section">
+                        <h3>Ready to find your next great deal?</h3>
+                        <p>Join thousands of investors using EquityNest to uncover undervalued properties.</p>
+                        <div class="pricing-final-cta">
+                            <button class="btn btn-primary btn-lg">
+                                <i data-lucide="zap"></i>
+                                Start Free Trial
+                            </button>
+                            <button class="btn btn-outline btn-lg">
+                                <i data-lucide="calendar"></i>
+                                Book a Demo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </div>
         
         <div id="signin-page" class="page">

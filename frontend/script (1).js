@@ -5,7 +5,12 @@ const pages = {
     'home': 'home-page',
     'demo': 'demo-page',
     'marketplace': 'marketplace-page',
-    'property-details': 'property-details-page'
+    'property-details': 'property-details-page',
+    'pricing': 'pricing-page',
+    'signin': 'signin-page',
+    'signup': 'signup-page',
+    'analyzer': 'analyzer-page',
+    'agent-connect': 'agent-connect-page'
 };
 
 let currentPage = 'home';
@@ -141,6 +146,22 @@ function showPage(pageId) {
         } else if (pageId === 'demo') {
             setTimeout(() => {
                 initDemoPage();
+                // Re-initialize Lucide icons
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            }, 100);
+        } else if (pageId === 'pricing') {
+            setTimeout(() => {
+                initPricingPage();
+                // Re-initialize Lucide icons
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            }, 100);
+        } else if (pageId === 'analyzer') {
+            setTimeout(() => {
+                initAnalyzerPage();
                 // Re-initialize Lucide icons
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
@@ -1038,5 +1059,285 @@ function initializeChatbot() {
         if (!chatbot.isOpen) {
             chatbot.showNotification();
         }
-    }, 5000);
+    }, 10000); // Show after 10 seconds
+}
+
+// Pricing page functionality
+function initPricingPage() {
+    // Handle pricing CTA buttons
+    document.querySelectorAll('.pricing-cta').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            if (button.textContent.includes('Start Free Trial')) {
+                // Navigate to signup page
+                showPage('signup');
+            } else if (button.textContent.includes('Contact Sales')) {
+                // Open contact form or redirect to sales page
+                alert('Thank you for your interest! Our sales team will contact you within 24 hours.');
+            }
+        });
+    });
+    
+    // Handle final CTA buttons
+    document.querySelectorAll('.pricing-final-cta .btn').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            
+            if (button.textContent.includes('Start Free Trial')) {
+                showPage('signup');
+            } else if (button.textContent.includes('Book a Demo')) {
+                alert('Demo booking coming soon! Please contact us for a personalized demonstration.');
+            }
+        });
+    });
+}
+
+// Initialize pricing page when shown
+document.addEventListener('DOMContentLoaded', function() {
+    // Add pricing page initialization to the existing DOMContentLoaded event
+    setTimeout(() => {
+        if (currentPage === 'pricing') {
+            initPricingPage();
+        }
+    }, 100);
+    
+    // Initialize image loading enhancements
+    initImageEnhancements();
+});
+
+// Image enhancement functionality
+function initImageEnhancements() {
+    // Add loading states to all images
+    const images = document.querySelectorAll('img');
+    
+    images.forEach(img => {
+        if (img.complete && img.naturalHeight !== 0) {
+            img.classList.add('loaded');
+        } else {
+            img.classList.add('loading');
+            
+            img.addEventListener('load', function() {
+                this.classList.remove('loading');
+                this.classList.add('loaded');
+            });
+            
+            img.addEventListener('error', function() {
+                this.classList.remove('loading');
+                this.style.display = 'none';
+                console.log('Failed to load image:', this.src);
+            });
+        }
+    });
+    
+    // Add hover effects to property cards
+    const propertyCards = document.querySelectorAll('.property-card');
+    propertyCards.forEach(card => {
+        card.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateY(-8px)';
+            this.style.boxShadow = 'var(--shadow-elegant)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateY(0)';
+            this.style.boxShadow = 'var(--shadow-card)';
+        });
+    });
+    
+    // Add image overlay effects
+    const overlayImages = document.querySelectorAll('.hero-img, .demo-section img');
+    overlayImages.forEach(img => {
+        const wrapper = img.parentElement;
+        if (!wrapper.classList.contains('image-overlay')) {
+            wrapper.classList.add('image-overlay');
+        }
+    });
+}
+
+// Deal Analyzer functionality
+function initAnalyzerPage() {
+    console.log('Deal Analyzer page initialized');
+    
+    // Simulate loading state
+    const loadingElement = document.getElementById('analyzer-loading');
+    const resultsElement = document.getElementById('property-results');
+    
+    if (loadingElement && resultsElement) {
+        // Show loading initially
+        loadingElement.style.display = 'flex';
+        resultsElement.style.display = 'none';
+        
+        // Simulate data loading after 2 seconds
+        setTimeout(() => {
+            loadingElement.style.display = 'none';
+            resultsElement.style.display = 'block';
+            
+            // Add animation to property cards
+            const propertyCards = document.querySelectorAll('.analyzed-property-card');
+            propertyCards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateY(20px)';
+                    card.style.transition = 'all 0.5s ease';
+                    
+                    setTimeout(() => {
+                        card.style.opacity = '1';
+                        card.style.transform = 'translateY(0)';
+                    }, 50);
+                }, index * 200);
+            });
+        }, 2000);
+    }
+}
+
+// Analyzer page functions (placeholders for backend integration)
+function refreshAnalyzerData() {
+    console.log('Refreshing analyzer data...');
+    
+    // Show loading state
+    const loadingElement = document.getElementById('analyzer-loading');
+    const resultsElement = document.getElementById('property-results');
+    
+    if (loadingElement && resultsElement) {
+        loadingElement.style.display = 'flex';
+        resultsElement.style.display = 'none';
+        
+        // TODO: Replace with actual backend call
+        // Example: await fetch('/api/analyzer/refresh', { method: 'POST' });
+        
+        // Simulate refresh
+        setTimeout(() => {
+            loadingElement.style.display = 'none';
+            resultsElement.style.display = 'block';
+            
+            // Show success notification
+            showNotification('Analysis refreshed successfully!', 'success');
+        }, 1500);
+    }
+}
+
+function exportAnalyzerResults() {
+    console.log('Exporting analyzer results...');
+    
+    // TODO: Replace with actual backend call
+    // Example: const data = await fetch('/api/analyzer/export');
+    
+    // Simulate export
+    showNotification('Export started! Check your downloads folder.', 'info');
+}
+
+function editPreferences() {
+    console.log('Opening preferences editor...');
+    
+    // TODO: Open preferences modal or navigate to preferences page
+    // For now, show alert
+    alert('Preferences editor will open here. This will be connected to your backend API.');
+}
+
+function runNewAnalysis() {
+    console.log('Running new analysis...');
+    
+    // Show loading state
+    const loadingElement = document.getElementById('analyzer-loading');
+    const resultsElement = document.getElementById('property-results');
+    
+    if (loadingElement && resultsElement) {
+        loadingElement.style.display = 'flex';
+        resultsElement.style.display = 'none';
+        
+        // TODO: Replace with actual backend call
+        // Example: await fetch('/api/analyzer/analyze', { method: 'POST', body: preferences });
+        
+        // Simulate analysis
+        setTimeout(() => {
+            loadingElement.style.display = 'none';
+            resultsElement.style.display = 'block';
+            
+            showNotification('New analysis complete! Found 3 new opportunities.', 'success');
+        }, 3000);
+    }
+}
+
+function viewPropertyDetails(propertyId) {
+    console.log('Viewing property details for:', propertyId);
+    
+    // TODO: Replace with actual property details navigation
+    // Example: showPage('property-details', { propertyId });
+    
+    // For now, show alert
+    alert(`Property details for ${propertyId} will load here. This will connect to your property details API.`);
+}
+
+function saveProperty(propertyId) {
+    console.log('Saving property:', propertyId);
+    
+    // TODO: Replace with actual backend call
+    // Example: await fetch('/api/properties/save', { method: 'POST', body: { propertyId } });
+    
+    // Simulate save
+    const button = event.target.closest('button');
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i data-lucide="check"></i>Saved';
+    button.classList.add('btn-success');
+    
+    setTimeout(() => {
+        button.innerHTML = originalText;
+        button.classList.remove('btn-success');
+    }, 2000);
+    
+    showNotification('Property saved to your watchlist!', 'success');
+}
+
+function contactAgent(propertyId) {
+    console.log('Contacting agent for property:', propertyId);
+    
+    // TODO: Replace with actual agent contact flow
+    // Example: await fetch('/api/properties/contact-agent', { method: 'POST', body: { propertyId } });
+    
+    // For now, show alert
+    alert(`Agent contact form for property ${propertyId} will open here. This will connect to your agent network API.`);
+}
+
+// Notification system for analyzer feedback
+function showNotification(message, type = 'info') {
+    // Create notification element if it doesn't exist
+    let notification = document.getElementById('analyzer-notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'analyzer-notification';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            max-width: 400px;
+        `;
+        document.body.appendChild(notification);
+    }
+    
+    // Set notification style based on type
+    const styles = {
+        success: { background: 'hsl(120 100% 40%)', color: 'white' },
+        error: { background: 'hsl(0 100% 60%)', color: 'white' },
+        info: { background: 'hsl(210 100% 50%)', color: 'white' },
+        warning: { background: 'hsl(45 100% 50%)', color: 'black' }
+    };
+    
+    const style = styles[type] || styles.info;
+    notification.style.background = style.background;
+    notification.style.color = style.color;
+    notification.textContent = message;
+    
+    // Show notification
+    notification.style.transform = 'translateX(0)';
+    
+    // Hide after 4 seconds
+    setTimeout(() => {
+        notification.style.transform = 'translateX(100%)';
+    }, 4000);
 }
