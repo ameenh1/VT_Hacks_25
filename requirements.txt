@@ -1,20 +1,20 @@
 # Core web framework and server
-fastapi
-uvicorn[standard]
+fastapi>=0.104.0
+uvicorn[standard]>=0.23.0
 
 # HTTP client and async support  
 httpx
 aiofiles
+requests>=2.25.0
 
 # Environment and configuration
 python-dotenv
 
 # AI and Machine Learning
 google-generativeai
-pydantic
+pydantic>=2.0.0
 
 # Data handling and validation
-requests
 pandas
 numpy
 
