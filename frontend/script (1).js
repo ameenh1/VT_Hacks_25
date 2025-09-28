@@ -152,6 +152,14 @@ function showPage(pageId) {
                     lucide.createIcons();
                 }
             }, 100);
+        } else if (pageId === 'chat') {
+            setTimeout(() => {
+                initializeChatDashboard();
+                // Re-initialize Lucide icons
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            }, 100);
         } else if (pageId === 'pricing') {
             setTimeout(() => {
                 initPricingPage();
@@ -1022,10 +1030,61 @@ class ChatbotManager {
     
     formatMessage(content) {
         // Convert line breaks to <br> tags
-        return content
+        let formatted = content
             .replace(/\n/g, '<br>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>');
+        
+        // Check if this looks like a property listing response with dual pricing
+        if (content.includes('🏠 **Property') && content.includes('📍')) {
+            // Enhanced property pattern to capture both AI fair value and listed price
+            const propertyPattern = /🏠 \*\*Property (\d+)\*\*<br>📍 ([^<]+)(?:<br>[🎯📊📈💰] \*\*Fair Value \(AI\)\*\*: ([^<]+))?(?:<br>�️ \*\*Listed Price\*\*: ([^<]+))?(?:<br>�🏡 ([^<]+))?(?:<br>📅 Built: ([^<]+))?(?:<br>🤖 ([^<]+))?/g;
+            
+            let propertyHtml = '<div class="property-results">';
+            let match;
+            let hasProperties = false;
+            
+            // Extract intro text (before properties)
+            const introMatch = content.match(/^(.*?)🏠 \*\*Property/s);
+            if (introMatch) {
+                propertyHtml += `<div class="property-intro">${introMatch[1].replace(/\n/g, '<br>')}</div>`;
+            }
+            
+            while ((match = propertyPattern.exec(formatted)) !== null) {
+                hasProperties = true;
+                const [, number, address, aiPrice, listedPrice, details, yearBuilt, aiConfidence] = match;
+                
+                propertyHtml += `
+                    <div class="property-card-chat">
+                        <div class="property-header">
+                            <span class="property-number">#${number}</span>
+                            <div class="property-prices">
+                                ${aiPrice ? `<div class="ai-price"><span class="price-label">AI Fair Value:</span> <span class="price-value">${aiPrice}</span></div>` : ''}
+                                ${listedPrice ? `<div class="listed-price"><span class="price-label">Listed Price:</span> <span class="price-value">${listedPrice}</span></div>` : ''}
+                            </div>
+                        </div>
+                        <div class="property-address">${address}</div>
+                        ${details ? `<div class="property-details">${details}</div>` : ''}
+                        ${yearBuilt ? `<div class="property-year">Built: ${yearBuilt}</div>` : ''}
+                        ${aiConfidence ? `<div class="ai-confidence">${aiConfidence}</div>` : ''}
+                    </div>
+                `;
+            }
+            
+            // Extract outro text (after properties)
+            const outroMatch = content.match(/🤖 [^<]+<br><br>(.*)$/s);
+            if (outroMatch) {
+                propertyHtml += `<div class="property-outro">${outroMatch[1].replace(/\n/g, '<br>')}</div>`;
+            }
+            
+            propertyHtml += '</div>';
+            
+            if (hasProperties) {
+                return propertyHtml;
+            }
+        }
+        
+        return formatted;
     }
     
     showTyping() {
@@ -1529,7 +1588,110 @@ function updateChatHeader(chat) {
     }
 }
 
-function sendMessage() {
+// Chat Dashboard Backend Integration
+let chatDashboardSessionId = null;
+const CHAT_API_BASE = 'http://localhost:8001';
+
+async function initializeChatDashboard() {
+    // Start a new chat session when the dashboard loads
+    if (!chatDashboardSessionId) {
+        try {
+            const response = await fetch(`${CHAT_API_BASE}/chat/start`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({})
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to start chat session');
+            }
+            
+            const data = await response.json();
+            chatDashboardSessionId = data.session_id;
+            
+            // Add initial welcome message to dashboard
+            addMessage('ai', data.message);
+            
+        } catch (error) {
+            console.error('Error initializing chat dashboard:', error);
+            addMessage('ai', 'Welcome to EquityNest! I can help you find undervalued properties with high investment potential. Please make sure the chatbot server is running on port 8001.');
+        }
+    }
+}
+
+async function sendMessageToBackend(message) {
+    try {
+        // Initialize session if not already done
+        if (!chatDashboardSessionId) {
+            await initializeChatDashboard();
+        }
+        
+        const response = await fetch(`${CHAT_API_BASE}/chat/message`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                session_id: chatDashboardSessionId,
+                message: message
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to send message');
+        }
+        
+        const data = await response.json();
+        
+        // Hide typing indicator
+        hideTypingIndicator();
+        
+        // Add assistant response with property formatting
+        if (data.message.includes('**Property Details**') || data.message.includes('ATTOM Data') || data.message.includes('AI Analysis')) {
+            // This is a property response - format it nicely
+            addMessage('ai', formatPropertyResponse(data.message));
+        } else {
+            // Regular message
+            addMessage('ai', data.message);
+        }
+        
+        // Update chat preview in sidebar if available
+        updateChatPreview(data.message);
+        
+    } catch (error) {
+        throw error; // Re-throw for handling in sendMessage()
+    }
+}
+
+function formatPropertyResponse(response) {
+    // Convert the backend property response to a more readable format
+    let formattedResponse = response;
+    
+    // Replace markdown-style formatting with HTML
+    formattedResponse = formattedResponse
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>')
+        .replace(/📍/g, '<i data-lucide="map-pin" style="width: 16px; height: 16px; display: inline; margin-right: 4px;"></i>')
+        .replace(/💰/g, '<i data-lucide="dollar-sign" style="width: 16px; height: 16px; display: inline; margin-right: 4px;"></i>')
+        .replace(/🏠/g, '<i data-lucide="home" style="width: 16px; height: 16px; display: inline; margin-right: 4px;"></i>')
+        .replace(/🎯/g, '<i data-lucide="target" style="width: 16px; height: 16px; display: inline; margin-right: 4px;"></i>')
+        .replace(/📊/g, '<i data-lucide="bar-chart" style="width: 16px; height: 16px; display: inline; margin-right: 4px;"></i>');
+    
+    return formattedResponse;
+}
+
+function updateChatPreview(message) {
+    const chat = chats[currentChat];
+    if (chat) {
+        chat.lastMessage = message.replace(/<[^>]*>/g, '').substring(0, 50) + '...';
+        chat.time = 'now';
+        renderChatList();
+    }
+}
+
+async function sendMessage() {
     const chatInput = document.getElementById('chat-input');
     if (!chatInput || !chatInput.value.trim()) return;
     
@@ -1543,17 +1705,21 @@ function sendMessage() {
     // Show typing indicator
     showTypingIndicator();
     
-    // Simulate AI response after delay
-    setTimeout(() => {
+    // Send message to real backend
+    try {
+        await sendMessageToBackend(messageText);
+    } catch (error) {
+        console.error('Error sending message:', error);
         hideTypingIndicator();
-        handleAIResponse(messageText);
-    }, Math.random() * 2000 + 1000);
+        addMessage('ai', 'Sorry, I encountered an error processing your message. Please make sure the chatbot server is running on port 8001 and try again.');
+    }
 }
 
 function sendQuickMessage(message) {
     const chatInput = document.getElementById('chat-input');
     if (chatInput) {
         chatInput.value = message;
+        // Call the async sendMessage function
         sendMessage();
     }
 }
@@ -1631,74 +1797,32 @@ function generatePropertyCards(properties) {
     `;
 }
 
-function handleAIResponse(userMessage) {
-    const lowerMessage = userMessage.toLowerCase();
+function showTypingIndicator() {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
     
-    let response = '';
-    let properties = null;
+    const typingHTML = `
+        <div class="message ai-message typing-message" id="typing-indicator">
+            <div class="message-avatar">
+                <i data-lucide="bot"></i>
+            </div>
+            <div class="message-content">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+    `;
     
-    if (lowerMessage.includes('property') || lowerMessage.includes('house') || lowerMessage.includes('find')) {
-        response = `I found several excellent investment opportunities that match your criteria. Here are the top properties with significant upside potential:`;
-        properties = [
-            {
-                address: '789 Elm Street',
-                location: 'Austin, TX',
-                beds: 3,
-                baths: 2,
-                sqft: '1,920',
-                savings: 28,
-                roi: 16,
-                price: 462000,
-                image: 'hero-house.jpg'
-            },
-            {
-                address: '321 Maple Ave',
-                location: 'Austin, TX',
-                beds: 4,
-                baths: 3,
-                sqft: '2,150',
-                savings: 22,
-                roi: 13,
-                price: 478000,
-                image: 'houses-grid.jpg'
-            }
-        ];
-    } else if (lowerMessage.includes('market') || lowerMessage.includes('trend')) {
-        response = `The Austin market is showing strong fundamentals with 12% year-over-year appreciation. Key trends include:<br><br>
-                   • Inventory levels down 15% from last year<br>
-                   • Average days on market: 28 days<br>
-                   • Price growth concentrated in suburbs<br>
-                   • Investment opportunities in emerging neighborhoods<br><br>
-                   Would you like me to analyze specific areas in more detail?`;
-    } else if (lowerMessage.includes('roi') || lowerMessage.includes('return') || lowerMessage.includes('calculate')) {
-        response = `I can help you calculate ROI for any property. For a typical $450,000 investment property in Austin:<br><br>
-                   • Monthly rent: $2,800<br>
-                   • Annual rental income: $33,600<br>
-                   • Operating expenses: $8,400<br>
-                   • Net operating income: $25,200<br>
-                   • Cash-on-cash return: 14.2%<br><br>
-                   Would you like me to run calculations for a specific property?`;
-    } else {
-        response = `I understand you're looking for real estate investment guidance. I can help you with:<br><br>
-                   • Finding undervalued properties<br>
-                   • Market analysis and trends<br>
-                   • ROI calculations<br>
-                   • Investment strategy recommendations<br><br>
-                   What specific aspect would you like to explore?`;
-    }
+    messagesContainer.insertAdjacentHTML('beforeend', typingHTML);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
-    addMessage('ai', response, properties);
-    
-    // Update chat preview
-    const chat = chats[currentChat];
-    if (chat) {
-        chat.lastMessage = response.replace(/<[^>]*>/g, '').substring(0, 50) + '...';
-        chat.time = 'now';
-        renderChatList();
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
     }
 }
-
-function showTypingIndicator() {
     const messagesContainer = document.getElementById('chat-messages');
     if (!messagesContainer) return;
     
