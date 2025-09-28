@@ -18,14 +18,14 @@ Author: VT Hacks 25 Team
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 import uvicorn
 from datetime import datetime
 import asyncio
 
 # Import the customer agent
-from agents.customer_agent import CustomerAgent
+from agents.customer_agent import CustomerAgent, FrontendPreferences as AgentFrontendPreferences
 import os
 from dotenv import load_dotenv
 
@@ -64,8 +64,15 @@ app.add_middleware(
 )
 
 # Pydantic models for API requests/responses
+class FrontendPreferences(BaseModel):
+    location: Optional[str] = None
+    property_types: List[str] = []
+    budget_min: Optional[int] = None
+    budget_max: Optional[int] = None
+
 class ChatStartRequest(BaseModel):
     user_id: Optional[str] = None
+    frontend_data: Optional[FrontendPreferences] = None
 
 class ChatStartResponse(BaseModel):
     session_id: str
@@ -126,11 +133,58 @@ async def health_check():
 async def start_chat(request: ChatStartRequest):
     """Start a new chatbot session"""
     try:
-        # Start a new chatbot session
-        session = customer_agent.start_chatbot_session()
+        # Convert frontend data format if provided
+        agent_frontend_data = None
+        if request.frontend_data:
+            agent_frontend_data = AgentFrontendPreferences(
+                location=request.frontend_data.location,
+                property_types=request.frontend_data.property_types,
+                budget_min=request.frontend_data.budget_min,
+                budget_max=request.frontend_data.budget_max
+            )
         
-        # Get the initial greeting message
-        initial_message = """👋 Hi there! I'm your EquityNest assistant, and I'm here to help you find the perfect real estate investment opportunities.
+        # Start a new chatbot session with frontend data
+        session = customer_agent.start_chatbot_session(frontend_data=agent_frontend_data)
+        
+        # Get the initial greeting message - customize based on pre-filled data
+        if agent_frontend_data:
+            # Create a personalized greeting that acknowledges the form data
+            prefilled_info = []
+            if agent_frontend_data.location:
+                prefilled_info.append(f"properties in {agent_frontend_data.location}")
+            if agent_frontend_data.property_types:
+                types_friendly = {
+                    'primary-residence': 'a primary residence',
+                    'fix-flip': 'fix and flip opportunities',
+                    'rental-property': 'rental properties',
+                    'multi-family': 'multi-family properties',
+                    'quick-deals': 'quick wholesale deals'
+                }
+                type_names = [types_friendly.get(t, t) for t in agent_frontend_data.property_types]
+                if len(type_names) == 1:
+                    prefilled_info.append(f"looking for {type_names[0]}")
+                else:
+                    prefilled_info.append(f"interested in {', '.join(type_names[:-1])} and {type_names[-1]}")
+            
+            if agent_frontend_data.budget_min or agent_frontend_data.budget_max:
+                budget_parts = []
+                if agent_frontend_data.budget_min:
+                    budget_parts.append(f"${agent_frontend_data.budget_min:,}")
+                if agent_frontend_data.budget_max:
+                    budget_parts.append(f"${agent_frontend_data.budget_max:,}")
+                budget_str = " - ".join(budget_parts) if len(budget_parts) == 2 else f"up to {budget_parts[0]}" if budget_parts else ""
+                if budget_str:
+                    prefilled_info.append(f"with a budget of {budget_str}")
+            
+            context = ", ".join(prefilled_info) if prefilled_info else "your investment goals"
+            
+            initial_message = f"""👋 Hi there! I see you're interested in {context}. That's exciting!
+
+I'm your EquityNest assistant, and I'm here to help you find the perfect real estate investment opportunities. I've noted your preferences from the form, and I'd love to learn more about what you're looking for.
+
+What's driving your interest in real estate investing right now? Are you looking to get started, or are you expanding an existing portfolio?"""
+        else:
+            initial_message = """👋 Hi there! I'm your EquityNest assistant, and I'm here to help you find the perfect real estate investment opportunities.
 
 I'll ask you a few questions to understand what you're looking for, and then I can help you discover properties that match your investment goals.
 
@@ -174,9 +228,8 @@ async def send_message(request: ChatMessageRequest):
             preferences_collected = {
                 "location_preferences": session.user_preferences.location_preferences,
                 "property_preferences": session.user_preferences.property_preferences,
-                "budget_preferences": session.user_preferences.budget_preferences,
-                "investment_strategy": session.user_preferences.investment_strategy.value if session.user_preferences.investment_strategy else None,
-                "timeline": session.user_preferences.timeline
+                "financial_preferences": session.user_preferences.financial_preferences,
+                "timeline_preferences": session.user_preferences.timeline_preferences
             }
         
         return ChatMessageResponse(
@@ -232,6 +285,48 @@ async def end_chat(session_id: str):
     except Exception as e:
         logger.error(f"Error ending chat session: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to end chat session: {str(e)}")
+
+@app.get("/chat/{session_id}/deal-finder-data")
+async def get_deal_finder_data(session_id: str):
+    """Get structured data for deal_finder agent"""
+    try:
+        deal_finder_data = customer_agent.get_session_deal_finder_data(session_id)
+        
+        if not deal_finder_data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "deal_finder_data": deal_finder_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting deal finder data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get deal finder data: {str(e)}")
+
+@app.post("/chat/{session_id}/trigger-deal-finder")
+async def trigger_deal_finder(session_id: str):
+    """Trigger handoff to deal_finder agent"""
+    try:
+        result = customer_agent.trigger_deal_finder_handoff(session_id)
+        
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "handoff_result": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering deal finder: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to trigger deal finder: {str(e)}")
 
 # Run the application
 if __name__ == "__main__":

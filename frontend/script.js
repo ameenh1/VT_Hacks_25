@@ -271,6 +271,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize chatbot
     initializeChatbot();
 
+    // Auto-detect and initialize demo page if we're on try-equitynest.html
+    if (window.location.pathname.includes('try-equitynest.html') || 
+        window.location.href.includes('try-equitynest.html') ||
+        document.querySelector('.demo-search-section')) {
+        console.log('🎯 Detected Try EquityNest page, initializing demo functionality...');
+        // Delay initialization slightly to ensure DOM is fully ready
+        setTimeout(() => {
+            initDemoPage();
+        }, 100);
+    }
+
     console.log('EquityAI initialized successfully!');
 });
 
@@ -439,9 +450,13 @@ class ChatbotManager {
         
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
+        let iconType = 'home'; // default for assistant
+        if (role === 'user') iconType = 'user';
+        else if (role === 'system') iconType = 'settings';
+        
         messageEl.innerHTML = `
             <div class="chat-message-avatar">
-                <i data-lucide="${role === 'user' ? 'user' : 'home'}"></i>
+                <i data-lucide="${iconType}"></i>
             </div>
             <div class="chat-message-content">
                 ${this.formatMessage(content)}
@@ -497,6 +512,9 @@ class ChatbotManager {
 // Initialize chatbot
 function initializeChatbot() {
     const chatbot = new ChatbotManager();
+    
+    // Store chatbot instance globally so it can be accessed from form handlers
+    window.chatbot = chatbot;
     
     // Show notification after a delay if chat hasn't been opened
     setTimeout(() => {
@@ -691,24 +709,29 @@ function initSearchFunctionality() {
 }
 
 async function handleSearch() {
-    console.log('Handling property search...');
+    console.log('🔍 Handling property search...');
     
     // Get form data
     const searchData = getSearchFormData();
+    console.log('📝 Form data collected:', searchData);
     
     if (!validateSearchData(searchData)) {
+        console.log('❌ Validation failed, stopping search');
         return;
     }
+    
+    console.log('✅ Validation passed, starting chatbot with form data');
     
     // Show loading state
     showLoadingState();
     
     try {
-        // Simulate API call (replace with actual API integration)
-        await simulatePropertySearch(searchData);
+        // Option 1: Start chatbot with form data
+        await startChatbotWithFormData(searchData);
         
-        // Show results
-        displaySearchResults(searchData);
+        // Option 2: Or simulate direct search (keeping original functionality)
+        // await simulatePropertySearch(searchData);
+        // displaySearchResults(searchData);
         
     } catch (error) {
         console.error('Search failed:', error);
@@ -718,8 +741,192 @@ async function handleSearch() {
     }
 }
 
+async function startChatbotWithFormData(searchData) {
+    console.log('🤖 Updating existing chatbot widget with form data:', searchData);
+    
+    const CHATBOT_API_BASE = 'http://localhost:8001';
+    
+    try {
+        // Prepare frontend data for the chatbot
+        const frontendData = {
+            location: searchData.location,
+            property_types: searchData.propertyTypes,
+            budget_min: searchData.budget.min || null,
+            budget_max: searchData.budget.max || null
+        };
+        
+        console.log('📤 Sending to chatbot API:', frontendData);
+        
+        // Check if the chatbot widget exists and get its instance
+        const chatbotWidget = document.getElementById('chatbot-widget');
+        if (!chatbotWidget) {
+            throw new Error('Chatbot widget not found');
+        }
+        
+        // Get the existing chatbot instance (assuming it's stored globally)
+        let chatbot = window.chatbot;
+        if (!chatbot) {
+            console.log('🔄 No existing chatbot instance, will create new session with form data');
+        }
+        
+        // Start chatbot session with form data
+        const startResponse = await fetch(`${CHATBOT_API_BASE}/chat/start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                frontend_data: frontendData
+            })
+        });
+        
+        console.log('📥 API Response status:', startResponse.status);
+        
+        if (!startResponse.ok) {
+            const errorText = await startResponse.text();
+            console.error('❌ API Error:', errorText);
+            throw new Error(`HTTP error! status: ${startResponse.status} - ${errorText}`);
+        }
+        
+        const chatSession = await startResponse.json();
+        console.log('✅ Chatbot session started:', chatSession);
+        
+        // Update the existing chatbot widget instead of creating new interface
+        updateExistingChatbot(chatSession, frontendData);
+        
+    } catch (error) {
+        console.error('❌ Failed to start chatbot:', error);
+        
+        // Show user-friendly error message
+        alert(`Sorry, there was an error connecting to the chatbot: ${error.message}. Please make sure the chatbot server is running on port 8001.`);
+        
+        throw error;
+    }
+}
+
+function updateExistingChatbot(chatSession, frontendData) {
+    console.log('🔄 Updating existing chatbot widget with session data');
+    
+    // Get or create the chatbot instance
+    let chatbot = window.chatbot;
+    if (!chatbot) {
+        console.log('📱 No existing chatbot found, this should not happen');
+        return;
+    }
+    
+    // If chatbot already has a session, we need to handle this carefully
+    if (chatbot.sessionId && chatbot.sessionId !== chatSession.session_id) {
+        console.log('🔄 Chatbot has existing session, updating with new session that has form data');
+        // Clear existing messages to avoid confusion
+        chatbot.elements.messages.innerHTML = '';
+    }
+    
+    // Update the chatbot's session ID with the new one that has form data
+    chatbot.sessionId = chatSession.session_id;
+    
+    // Open the chatbot widget if it's not already open
+    if (!chatbot.isOpen) {
+        chatbot.openChat();
+    }
+    
+    // Add the initial message that acknowledges the form data
+    chatbot.addMessage('assistant', chatSession.message);
+    
+    // Add a visual indicator that form data was processed
+    const formSummary = createFormDataSummary(frontendData);
+    if (formSummary) {
+        chatbot.addMessage('system', `📋 ${formSummary}`);
+    }
+    
+    console.log('✅ Chatbot widget updated successfully');
+    
+    // Show success message to user
+    showSuccessMessage('Form data sent to chatbot! The chat widget is now updated with your preferences.');
+}
+
+function createFormDataSummary(frontendData) {
+    const parts = [];
+    
+    if (frontendData.location) {
+        parts.push(`📍 ${frontendData.location}`);
+    }
+    
+    if (frontendData.property_types && frontendData.property_types.length > 0) {
+        const typeNames = frontendData.property_types.map(type => {
+            const typeMap = {
+                'primary-residence': 'Primary Residence',
+                'fix-flip': 'Fix & Flip',
+                'rental-property': 'Rental Property',
+                'multi-family': 'Multi-Family',
+                'quick-deals': 'Quick Deals'
+            };
+            return typeMap[type] || type;
+        });
+        parts.push(`🏠 ${typeNames.join(', ')}`);
+    }
+    
+    if (frontendData.budget_min || frontendData.budget_max) {
+        const budget = [];
+        if (frontendData.budget_min) budget.push(`$${frontendData.budget_min.toLocaleString()}`);
+        if (frontendData.budget_max) budget.push(`$${frontendData.budget_max.toLocaleString()}`);
+        parts.push(`💰 ${budget.join(' - ')}`);
+    }
+    
+    return parts.join(' • ');
+}
+
+function showSuccessMessage(message) {
+    // Create a temporary success notification
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #10b981;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 10000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        animation: slideIn 0.3s ease;
+    `;
+    
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    // Remove after 4 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 4000);
+    
+    // Add CSS animation
+    if (!document.getElementById('success-animation-styles')) {
+        const style = document.createElement('style');
+        style.id = 'success-animation-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+
+
 function getSearchFormData() {
+    console.log('📋 Collecting form data...');
+    
     const customBudgetEnabled = document.getElementById('custom-budget-toggle')?.checked;
+    console.log('💰 Custom budget enabled:', customBudgetEnabled);
     
     let minPrice, maxPrice;
     
@@ -731,30 +938,61 @@ function getSearchFormData() {
         maxPrice = parseInt(document.getElementById('max-price')?.value) || 0;
     }
     
-    return {
-        location: document.getElementById('demo-location')?.value || '',
-        propertyTypes: getSelectedStrategies(),
+    const location = document.getElementById('demo-location')?.value || '';
+    const propertyTypes = getSelectedStrategies();
+    
+    console.log('📍 Location:', location);
+    console.log('🏠 Property types:', propertyTypes);
+    console.log('💵 Budget:', { min: minPrice, max: maxPrice });
+    
+    const formData = {
+        location: location,
+        propertyTypes: propertyTypes,
         budget: {
             min: minPrice,
             max: maxPrice,
             customBudget: customBudgetEnabled
         }
     };
+    
+    console.log('📦 Complete form data:', formData);
+    return formData;
 }
 
 function getSelectedStrategies() {
+    console.log('🎯 Checking selected strategies...');
+    
     const strategies = [];
     
-    if (document.getElementById('fixer-upper')?.checked) {
-        strategies.push('fixer-upper');
+    const primaryResidence = document.getElementById('primary-residence')?.checked;
+    const fixFlip = document.getElementById('fix-flip')?.checked;
+    const rentalProperty = document.getElementById('rental-property')?.checked;
+    const multiFamily = document.getElementById('multi-family')?.checked;
+    const quickDeals = document.getElementById('quick-deals')?.checked;
+    
+    console.log('✓ Primary residence:', primaryResidence);
+    console.log('✓ Fix & flip:', fixFlip);
+    console.log('✓ Rental property:', rentalProperty);
+    console.log('✓ Multi-family:', multiFamily);
+    console.log('✓ Quick deals:', quickDeals);
+    
+    if (primaryResidence) {
+        strategies.push('primary-residence');
     }
-    if (document.getElementById('long-term-flow')?.checked) {
-        strategies.push('long-term-cashflow');
+    if (fixFlip) {
+        strategies.push('fix-flip');
     }
-    if (document.getElementById('quick-flip')?.checked) {
-        strategies.push('quick-buy-sell');
+    if (rentalProperty) {
+        strategies.push('rental-property');
+    }
+    if (multiFamily) {
+        strategies.push('multi-family');
+    }
+    if (quickDeals) {
+        strategies.push('quick-deals');
     }
     
+    console.log('📋 Selected strategies:', strategies);
     return strategies;
 }
 

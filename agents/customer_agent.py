@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import uuid
 from enum import Enum
+from pydantic import BaseModel
 
 from models.data_models import PropertyAnalysis, QuickAnalysisResponse, ATTOMSearchCriteria, InvestmentStrategy, PropertyType
 
@@ -102,10 +103,18 @@ class UserPreferences:
         return int((len(self.completed_sections) / total_sections) * 100) if total_sections > 0 else 0
 
 
+class FrontendPreferences(BaseModel):
+    """Structured data from frontend form inputs"""
+    location: Optional[str] = None
+    property_types: List[str] = []  # e.g., ['primary-residence', 'fix-flip', 'rental-property']
+    budget_min: Optional[int] = None
+    budget_max: Optional[int] = None
+
+
 class ChatbotSession:
     """Manages a chatbot session for collecting user preferences"""
     
-    def __init__(self, session_id: str = None, handoff_callback: Optional[Callable] = None):
+    def __init__(self, session_id: str = None, handoff_callback: Optional[Callable] = None, frontend_data: Optional[FrontendPreferences] = None):
         self.session_id = session_id or str(uuid.uuid4())
         self.user_preferences = UserPreferences()
         self.current_step = ChatbotStep.GREETING
@@ -125,6 +134,71 @@ class ChatbotSession:
         
         # Property results from deal_finder
         self.property_results: List[Dict[str, Any]] = []
+        
+        # Frontend form data - pre-populated preferences
+        self.frontend_data = frontend_data
+        self._populate_from_frontend_data()
+    
+    def _populate_from_frontend_data(self):
+        """Populate user preferences from frontend form data"""
+        if not self.frontend_data:
+            return
+            
+        # Parse location data
+        if self.frontend_data.location:
+            location = self.frontend_data.location.strip()
+            # Try to parse common location formats
+            if ',' in location:
+                parts = [p.strip() for p in location.split(',')]
+                if len(parts) >= 2:
+                    # Assume "City, State" or "City, State ZIP" format
+                    self.user_preferences.location_preferences['cities'].append(parts[0])
+                    # Check if second part looks like a state (2 chars) or contains state
+                    state_part = parts[1]
+                    if len(state_part) == 2:
+                        self.user_preferences.location_preferences['states'].append(state_part.upper())
+                    else:
+                        # Try to extract state from longer string
+                        state_words = state_part.split()
+                        for word in state_words:
+                            if len(word) == 2 and word.isalpha():
+                                self.user_preferences.location_preferences['states'].append(word.upper())
+                                break
+            elif location.isdigit() and len(location) == 5:
+                # ZIP code
+                self.user_preferences.location_preferences['zip_codes'].append(location)
+            else:
+                # Single city or state name
+                self.user_preferences.location_preferences['cities'].append(location)
+        
+        # Map frontend property types to our internal types
+        property_type_mapping = {
+            'primary-residence': InvestmentStrategy.BUY_AND_HOLD,  # Closest match
+            'fix-flip': InvestmentStrategy.FIX_AND_FLIP,
+            'rental-property': InvestmentStrategy.BUY_AND_HOLD,
+            'multi-family': InvestmentStrategy.BUY_AND_HOLD,  # Multi-family for buy & hold
+            'quick-deals': InvestmentStrategy.WHOLESALE
+        }
+        
+        for frontend_type in self.frontend_data.property_types:
+            if frontend_type in property_type_mapping:
+                strategy = property_type_mapping[frontend_type]
+                if strategy not in self.user_preferences.financial_preferences['investment_strategies']:
+                    self.user_preferences.financial_preferences['investment_strategies'].append(strategy)
+        
+        # Set budget preferences
+        if self.frontend_data.budget_min:
+            self.user_preferences.financial_preferences['min_price'] = self.frontend_data.budget_min
+        if self.frontend_data.budget_max:
+            self.user_preferences.financial_preferences['max_price'] = self.frontend_data.budget_max
+        
+        # Mark sections as completed if we have data
+        if self.frontend_data.location:
+            self.user_preferences.completed_sections.add('location')
+        if self.frontend_data.property_types:
+            self.user_preferences.completed_sections.add('investment_strategy')
+        if self.frontend_data.budget_min or self.frontend_data.budget_max:
+            self.user_preferences.completed_sections.add('budget')
     
     def update_activity(self):
         """Update last activity timestamp"""
@@ -151,6 +225,43 @@ class ChatbotSession:
             context_lines.append(f"{role_display}: {msg['content']}")
         
         return "\n".join(context_lines)
+    
+    def get_deal_finder_data(self) -> Dict[str, Any]:
+        """Get structured data for passing to deal_finder agent"""
+        return {
+            'session_id': self.session_id,
+            'user_type': self.user_type.value,
+            'search_criteria': self.user_preferences.to_search_criteria().dict(),
+            'preferences': {
+                'location_preferences': self.user_preferences.location_preferences,
+                'property_preferences': self.user_preferences.property_preferences,
+                'financial_preferences': self.user_preferences.financial_preferences,
+                'timeline_preferences': self.user_preferences.timeline_preferences,
+                'investment_strategies': [strategy.value for strategy in self.user_preferences.financial_preferences.get('investment_strategies', [])]
+            },
+            'frontend_data': self.frontend_data.dict() if self.frontend_data else None,
+            'completion_status': {
+                'completed_sections': list(self.user_preferences.completed_sections),
+                'progress_percentage': self.user_preferences.get_progress_percentage(),
+                'is_complete': self.user_preferences.is_complete
+            },
+            'conversation_summary': self._get_conversation_summary(),
+            'created_at': self.created_at.isoformat(),
+            'last_activity': self.last_activity.isoformat()
+        }
+    
+    def _get_conversation_summary(self) -> str:
+        """Get a brief summary of the conversation for context"""
+        if not self.conversation_history:
+            return "No conversation history"
+        
+        # Get key points from conversation
+        key_messages = []
+        for msg in self.conversation_history[-5:]:  # Last 5 messages
+            if msg['role'] == 'user' and len(msg['content']) > 20:
+                key_messages.append(f"User: {msg['content'][:100]}...")
+        
+        return " | ".join(key_messages) if key_messages else "Brief conversation"
 
 
 class CustomerAgent:
@@ -176,6 +287,40 @@ class CustomerAgent:
         self.deal_finder_callback = deal_finder_callback
         
         logger.info("Customer Agent initialized with Gemini 2.5 Flash")
+    
+    def get_session_deal_finder_data(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get deal finder data for a specific session"""
+        if session_id not in self.active_sessions:
+            return None
+        
+        session = self.active_sessions[session_id]
+        return session.get_deal_finder_data()
+    
+    def trigger_deal_finder_handoff(self, session_id: str) -> Dict[str, Any]:
+        """Trigger handoff to deal_finder agent with collected data"""
+        if session_id not in self.active_sessions:
+            return {"error": "Session not found"}
+        
+        session = self.active_sessions[session_id]
+        deal_finder_data = session.get_deal_finder_data()
+        
+        # Call the callback if provided
+        if self.deal_finder_callback:
+            try:
+                result = self.deal_finder_callback(deal_finder_data)
+                logger.info(f"Deal finder callback completed for session {session_id}")
+                return result
+            except Exception as e:
+                logger.error(f"Deal finder callback failed: {e}")
+                return {"error": f"Deal finder callback failed: {str(e)}"}
+        
+        # Return the data structure for the deal_finder agent
+        logger.info(f"Prepared deal finder data for session {session_id}")
+        return {
+            "status": "ready_for_deal_finder",
+            "data": deal_finder_data,
+            "message": "User preferences collected and ready for property search"
+        }
     
     def _detect_user_type(self, user_message: str, conversation_history: List[Dict] = None) -> UserType:
         """Detect user type based on their message and conversation history"""
@@ -304,12 +449,14 @@ class CustomerAgent:
     
     # Chatbot Conversation Methods
     
-    def start_chatbot_session(self, session_id: str = None) -> ChatbotSession:
+    def start_chatbot_session(self, session_id: str = None, frontend_data: Optional[FrontendPreferences] = None) -> ChatbotSession:
         """Start a new chatbot session for preference collection"""
-        session = ChatbotSession(session_id, self.deal_finder_callback)
+        session = ChatbotSession(session_id, self.deal_finder_callback, frontend_data)
         self.active_sessions[session.session_id] = session
         
         logger.info(f"Started new chatbot session: {session.session_id}")
+        if frontend_data:
+            logger.info(f"Session initialized with frontend data: location={frontend_data.location}, types={frontend_data.property_types}, budget={frontend_data.budget_min}-{frontend_data.budget_max}")
         return session
     
     async def handle_chatbot_message(self, session_id: str, user_message: str) -> str:
@@ -347,6 +494,22 @@ class CustomerAgent:
         # Get full conversation history for context
         conversation_context = session.get_conversation_context(last_n_messages=10)
         
+        # Build context about pre-filled data
+        prefilled_context = ""
+        if session.frontend_data:
+            prefilled_info = []
+            if session.frontend_data.location:
+                prefilled_info.append(f"location: {session.frontend_data.location}")
+            if session.frontend_data.property_types:
+                types_str = ", ".join(session.frontend_data.property_types)
+                prefilled_info.append(f"property types: {types_str}")
+            if session.frontend_data.budget_min or session.frontend_data.budget_max:
+                budget_str = f"${session.frontend_data.budget_min or 0:,} - ${session.frontend_data.budget_max or 'unlimited'}"
+                prefilled_info.append(f"budget: {budget_str}")
+            
+            if prefilled_info:
+                prefilled_context = f"\n\nIMPORTANT: The user has already provided some preferences through a form: {', '.join(prefilled_info)}. Acknowledge this information naturally and build on it rather than asking for it again."
+        
         # Create a natural, conversational response that builds on what they said
         greeting_prompt = f"""
         You are a friendly, knowledgeable real estate assistant having a conversation with someone who seems to be a {session.user_type.value.replace('_', ' ')}.
@@ -355,6 +518,7 @@ class CustomerAgent:
         {conversation_context}
         
         CURRENT MESSAGE: "{user_message}"
+        {prefilled_context}
         
         REMEMBER: You are having an ongoing conversation. Reference what was said before when appropriate. 
         Build on the conversation naturally like a real person would.
@@ -362,8 +526,8 @@ class CustomerAgent:
         Respond naturally to what they actually said, acknowledging the conversation flow. 
         Don't use templates or cookie-cutter responses. Build on their specific words and situation.
         
-        If they haven't mentioned location yet, you can naturally ask about it in context.
-        If they mentioned their situation, acknowledge it and ask a follow-up question that shows you're listening.
+        If they've already provided information through the form, acknowledge it and show that you understand their preferences.
+        Ask thoughtful follow-up questions based on what they've shared.
         
         Keep it human, warm, and genuinely helpful. Avoid sounding like a form or questionnaire.
         """
@@ -531,8 +695,8 @@ class CustomerAgent:
                 session.user_preferences.completed_sections.add('investment_strategy')
         
         if any(word in user_message_lower for word in ['flip', 'renovate', 'fix up']):
-            if InvestmentStrategy.FLIP not in session.user_preferences.financial_preferences['investment_strategies']:
-                session.user_preferences.financial_preferences['investment_strategies'].append(InvestmentStrategy.FLIP)
+            if InvestmentStrategy.FIX_AND_FLIP not in session.user_preferences.financial_preferences['investment_strategies']:
+                session.user_preferences.financial_preferences['investment_strategies'].append(InvestmentStrategy.FIX_AND_FLIP)
                 session.user_preferences.completed_sections.add('investment_strategy')
     
     def _summarize_known_preferences(self, session: ChatbotSession) -> str:
@@ -733,7 +897,7 @@ Which strategy interests you most, or are you open to multiple approaches?"""
         if any(word in user_message_lower for word in ['buy and hold', 'rental', 'cash flow']):
             strategies.append(InvestmentStrategy.BUY_AND_HOLD)
         if any(word in user_message_lower for word in ['flip', 'renovate', 'fix']):
-            strategies.append(InvestmentStrategy.FLIP)
+            strategies.append(InvestmentStrategy.FIX_AND_FLIP)
         if any(word in user_message_lower for word in ['brrrr', 'refinance']):
             strategies.append(InvestmentStrategy.BRRRR)
         
