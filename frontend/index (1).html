@@ -36,6 +36,7 @@
                 <a href="#" data-page="demo" class="nav-link">Try EquityNest</a>
                 <a href="#" data-page="marketplace" class="nav-link">Marketplace</a>
                 <a href="#" data-page="analyzer" class="nav-link">Analyzer</a>
+                <a href="#" data-page="chat" class="nav-link">Chat Dashboard</a>
                 <a href="#" data-page="agent-connect" class="nav-link">Agent Connect</a>
                 <a href="#" data-page="pricing" class="nav-link">Pricing</a>
             </div>
@@ -913,6 +914,279 @@
             <div style="padding: 100px 20px; text-align: center;">
                 <h1>Agent Connect - Coming Soon</h1>
                 <p>Agent connection features will be available here.</p>
+            </div>
+        </div>
+
+        <!-- Chat Dashboard Page -->
+        <div id="chat-page" class="page">
+            <div class="chat-dashboard">
+                <!-- Chat Sidebar -->
+                <div class="chat-sidebar">
+                    <div class="chat-sidebar-header">
+                        <h2>Conversations</h2>
+                        <button class="btn btn-primary new-chat-btn" onclick="startNewChat()">
+                            <i data-lucide="plus"></i>
+                            New Chat
+                        </button>
+                    </div>
+                    
+                    <div class="chat-search">
+                        <div class="search-input-container">
+                            <i data-lucide="search"></i>
+                            <input type="text" placeholder="Search conversations..." class="chat-search-input">
+                        </div>
+                    </div>
+
+                    <div class="chat-filters">
+                        <button class="filter-btn active" onclick="filterChats('all')">All</button>
+                        <button class="filter-btn" onclick="filterChats('property')">Property</button>
+                        <button class="filter-btn" onclick="filterChats('analysis')">Analysis</button>
+                        <button class="filter-btn" onclick="filterChats('support')">Support</button>
+                    </div>
+
+                    <div class="chat-list" id="chat-list">
+                        <!-- Active chat conversations -->
+                        <div class="chat-item active" onclick="selectChat('chat-1')">
+                            <div class="chat-avatar">
+                                <i data-lucide="home"></i>
+                            </div>
+                            <div class="chat-info">
+                                <div class="chat-title">Property Analysis - Austin</div>
+                                <div class="chat-preview">Found 3 undervalued properties in your target area...</div>
+                                <div class="chat-time">2m ago</div>
+                            </div>
+                            <div class="chat-badge">3</div>
+                        </div>
+
+                        <div class="chat-item" onclick="selectChat('chat-2')">
+                            <div class="chat-avatar">
+                                <i data-lucide="calculator"></i>
+                            </div>
+                            <div class="chat-info">
+                                <div class="chat-title">ROI Calculator</div>
+                                <div class="chat-preview">Let me calculate the potential returns for this property...</div>
+                                <div class="chat-time">15m ago</div>
+                            </div>
+                        </div>
+
+                        <div class="chat-item" onclick="selectChat('chat-3')">
+                            <div class="chat-avatar">
+                                <i data-lucide="map-pin"></i>
+                            </div>
+                            <div class="chat-info">
+                                <div class="chat-title">Market Analysis - Dallas</div>
+                                <div class="chat-preview">The Dallas market shows strong growth potential...</div>
+                                <div class="chat-time">1h ago</div>
+                            </div>
+                        </div>
+
+                        <div class="chat-item" onclick="selectChat('chat-4')">
+                            <div class="chat-avatar">
+                                <i data-lucide="help-circle"></i>
+                            </div>
+                            <div class="chat-info">
+                                <div class="chat-title">Getting Started</div>
+                                <div class="chat-preview">Welcome to EquityNest! Here's how to get started...</div>
+                                <div class="chat-time">2d ago</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Main Area -->
+                <div class="chat-main">
+                    <div class="chat-header">
+                        <div class="chat-header-info">
+                            <div class="chat-avatar">
+                                <i data-lucide="home"></i>
+                            </div>
+                            <div class="chat-header-text">
+                                <h3>Property Analysis - Austin</h3>
+                                <span class="chat-status">AI Assistant • Online</span>
+                            </div>
+                        </div>
+                        <div class="chat-header-actions">
+                            <button class="btn btn-ghost" onclick="exportChat()" title="Export Chat">
+                                <i data-lucide="download"></i>
+                            </button>
+                            <button class="btn btn-ghost" onclick="clearChat()" title="Clear Chat">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                            <button class="btn btn-ghost" onclick="toggleChatSettings()" title="Settings">
+                                <i data-lucide="settings"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="chat-messages" id="chat-messages">
+                        <!-- Welcome message -->
+                        <div class="message ai-message">
+                            <div class="message-avatar">
+                                <i data-lucide="bot"></i>
+                            </div>
+                            <div class="message-content">
+                                <div class="message-text">
+                                    Welcome to EquityNest! I'm your AI assistant specializing in real estate investment analysis. I can help you:
+                                    <ul>
+                                        <li>Find undervalued properties in your target areas</li>
+                                        <li>Analyze investment potential and ROI</li>
+                                        <li>Compare market trends and neighborhoods</li>
+                                        <li>Calculate financing scenarios</li>
+                                    </ul>
+                                    What would you like to explore today?
+                                </div>
+                                <div class="message-time">2:45 PM</div>
+                            </div>
+                        </div>
+
+                        <!-- User message example -->
+                        <div class="message user-message">
+                            <div class="message-content">
+                                <div class="message-text">
+                                    I'm looking for investment properties in Austin, Texas. My budget is around $400-500k. Can you help me find some good deals?
+                                </div>
+                                <div class="message-time">2:46 PM</div>
+                            </div>
+                            <div class="message-avatar">
+                                <i data-lucide="user"></i>
+                            </div>
+                        </div>
+
+                        <!-- AI response with property suggestions -->
+                        <div class="message ai-message">
+                            <div class="message-avatar">
+                                <i data-lucide="bot"></i>
+                            </div>
+                            <div class="message-content">
+                                <div class="message-text">
+                                    Great! I've analyzed the Austin market for properties in your $400-500k range. Here are 3 excellent opportunities I found:
+                                </div>
+                                <div class="message-properties">
+                                    <div class="chat-property-card">
+                                        <img src="hero-house.jpg" alt="Property">
+                                        <div class="property-details">
+                                            <h4>123 Oak Street</h4>
+                                            <p>Austin, TX • 3 bed, 2 bath • 1,850 sqft</p>
+                                            <div class="property-metrics">
+                                                <span class="metric positive">$25k under market</span>
+                                                <span class="metric">15% ROI potential</span>
+                                            </div>
+                                            <div class="property-price">$485,000</div>
+                                        </div>
+                                        <button class="btn btn-sm btn-primary">View Details</button>
+                                    </div>
+                                    
+                                    <div class="chat-property-card">
+                                        <img src="houses-grid.jpg" alt="Property">
+                                        <div class="property-details">
+                                            <h4>456 Pine Avenue</h4>
+                                            <p>Austin, TX • 4 bed, 3 bath • 2,200 sqft</p>
+                                            <div class="property-metrics">
+                                                <span class="metric positive">$18k under market</span>
+                                                <span class="metric">12% ROI potential</span>
+                                            </div>
+                                            <div class="property-price">$475,000</div>
+                                        </div>
+                                        <button class="btn btn-sm btn-primary">View Details</button>
+                                    </div>
+                                </div>
+                                <div class="message-text">
+                                    All of these properties are showing strong investment potential with below-market pricing. Would you like me to dive deeper into any specific property or run a complete analysis?
+                                </div>
+                                <div class="message-time">2:47 PM</div>
+                            </div>
+                        </div>
+
+                        <!-- Typing indicator -->
+                        <div class="message ai-message typing-message" id="typing-indicator" style="display: none;">
+                            <div class="message-avatar">
+                                <i data-lucide="bot"></i>
+                            </div>
+                            <div class="message-content">
+                                <div class="typing-dots">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input -->
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <button class="attachment-btn" onclick="attachFile()" title="Attach File">
+                                <i data-lucide="paperclip"></i>
+                            </button>
+                            <textarea 
+                                id="chat-input" 
+                                class="chat-input" 
+                                placeholder="Ask about properties, market analysis, ROI calculations..."
+                                rows="1"
+                                onkeypress="handleChatKeyPress(event)"
+                            ></textarea>
+                            <button class="send-btn" onclick="sendMessage()" title="Send Message">
+                                <i data-lucide="send"></i>
+                            </button>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="sendQuickMessage('Find properties under $500k')">
+                                <i data-lucide="search"></i> Find Properties
+                            </button>
+                            <button class="quick-action-btn" onclick="sendQuickMessage('Analyze market trends')">
+                                <i data-lucide="trending-up"></i> Market Analysis
+                            </button>
+                            <button class="quick-action-btn" onclick="sendQuickMessage('Calculate ROI')">
+                                <i data-lucide="calculator"></i> ROI Calculator
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Settings Panel (hidden by default) -->
+                <div class="chat-settings" id="chat-settings" style="display: none;">
+                    <div class="settings-header">
+                        <h3>Chat Settings</h3>
+                        <button class="btn btn-ghost" onclick="toggleChatSettings()">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                    <div class="settings-content">
+                        <div class="setting-group">
+                            <label>AI Response Style</label>
+                            <select class="form-select">
+                                <option value="detailed">Detailed Analysis</option>
+                                <option value="concise">Quick Summaries</option>
+                                <option value="beginner">Beginner-Friendly</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label>Default Search Area</label>
+                            <input type="text" class="form-input" placeholder="Enter city or ZIP code" value="Austin, TX">
+                        </div>
+                        <div class="setting-group">
+                            <label>Budget Range</label>
+                            <div class="budget-inputs">
+                                <input type="number" class="form-input" placeholder="Min" value="400000">
+                                <input type="number" class="form-input" placeholder="Max" value="500000">
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked>
+                                <span>Auto-save conversations</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked>
+                                <span>Email notifications</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox">
+                                <span>Desktop notifications</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
